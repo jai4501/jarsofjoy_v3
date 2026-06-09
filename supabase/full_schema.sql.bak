@@ -1,0 +1,617 @@
+-- =========================================================
+-- JARS OF JOY - MASTER COMBINED SCHEMA
+-- Single production-ready SQL (all migrations merged)
+-- =========================================================
+
+-- =========================================================
+-- 0. EXTENSIONS
+-- =========================================================
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- =========================================================
+-- 1. SHARED TRIGGER FUNCTION: updated_at
+-- =========================================================
+
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =========================================================
+-- 2. PRODUCTS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.products (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name         TEXT        NOT NULL,
+  description  TEXT,
+  category     TEXT,
+  price        NUMERIC     NOT NULL,
+  images       TEXT[]      DEFAULT '{}',
+  tags         TEXT[]      DEFAULT '{}',
+  stock_status TEXT        DEFAULT 'In Stock'
+                           CHECK (stock_status IN ('In Stock', 'Out of Stock')),
+  variations   JSONB       DEFAULT '[]'::jsonb,
+  active       BOOLEAN     DEFAULT TRUE,
+  keywords     TEXT[]      DEFAULT '{}',
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS products_updated_at ON public.products;
+CREATE TRIGGER products_updated_at
+  BEFORE UPDATE ON public.products
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_products_active    ON public.products(active);
+CREATE INDEX IF NOT EXISTS idx_products_category  ON public.products(category);
+
+-- =========================================================
+-- 3. CUSTOMERS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.customers (
+  id                       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone                    TEXT        UNIQUE NOT NULL,
+  name                     TEXT,
+  consented                BOOLEAN     DEFAULT FALSE,
+  onboarding_status        TEXT        DEFAULT 'new'
+                                       CHECK (onboarding_status IN (
+                                         'new', 'awaiting_name', 'awaiting_consent', 'done'
+                                       )),
+  payment_status           TEXT        DEFAULT 'none'
+                                       CHECK (payment_status IN (
+                                         'none', 'pending', 'verified', 'failed'
+                                       )),
+  support_status           TEXT        DEFAULT 'bot'
+                                       CHECK (support_status IN (
+                                         'bot', 'human', 'priority', 'resolved'
+                                       )),
+  human_override           BOOLEAN     DEFAULT FALSE,
+  assigned_staff           UUID,
+  last_human_message_at    TIMESTAMPTZ,
+  unread_count             INTEGER     DEFAULT 0,
+  last_upi_ref             TEXT,
+  last_notified_at         TIMESTAMPTZ,
+  favorite_product         TEXT,
+  eggless_preference       BOOLEAN     DEFAULT FALSE,
+  last_order_at            TIMESTAMPTZ,
+  last_order_total         NUMERIC     DEFAULT 0,
+  total_orders             INTEGER     DEFAULT 0,
+  total_spent              NUMERIC     DEFAULT 0,
+  active_order_id          UUID,
+  preferred_delivery_type  TEXT,
+  created_at               TIMESTAMPTZ DEFAULT NOW(),
+  updated_at               TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS customers_updated_at ON public.customers;
+CREATE TRIGGER customers_updated_at
+  BEFORE UPDATE ON public.customers
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_customers_phone          ON public.customers(phone);
+CREATE INDEX IF NOT EXISTS idx_customers_onboarding     ON public.customers(onboarding_status);
+CREATE INDEX IF NOT EXISTS idx_customers_payment        ON public.customers(payment_status);
+CREATE INDEX IF NOT EXISTS idx_customers_human_override ON public.customers(human_override);
+CREATE INDEX IF NOT EXISTS idx_customers_support_status ON public.customers(support_status);
+
+-- =========================================================
+-- 4. USER PROFILES (Supabase Auth)
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id               UUID        PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name        TEXT,
+  email            TEXT        UNIQUE,
+  mobile           TEXT        UNIQUE,
+  email_verified   BOOLEAN     DEFAULT FALSE,
+  mobile_verified  BOOLEAN     DEFAULT FALSE,
+  created_at       TIMESTAMPTZ DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- =========================================================
+-- 5. ORDERS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.orders (
+  id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_phone     TEXT        NOT NULL,
+  -- legacy web-shop fields (kept for compatibility)
+  customer_name      TEXT,
+  address            TEXT,
+  special_instructions TEXT,
+  items              JSONB       DEFAULT '[]'::jsonb,
+  total              NUMERIC,
+  -- whatsapp CRM fields
+  product_name       TEXT,
+  quantity           INTEGER     CHECK (quantity > 0),
+  total_amount       NUMERIC     CHECK (total_amount >= 0),
+  subtotal           NUMERIC     DEFAULT 0,
+  delivery_charge    NUMERIC     DEFAULT 0,
+  delivery_address   TEXT,
+  delivery_date      DATE,
+  delivery_type      TEXT,
+  pickup_time        TEXT,
+  status             TEXT        DEFAULT 'pending'
+                                 CHECK (status IN (
+                                   'pending', 'payment_pending', 'confirmed',
+                                   'preparing', 'ready', 'out_for_delivery',
+                                   'completed', 'cancelled'
+                                 )),
+  payment_status     TEXT        DEFAULT 'pending',
+  payment_method     TEXT        DEFAULT 'upi',
+  payment_reference  TEXT,
+  order_source       TEXT        DEFAULT 'whatsapp',
+  human_takeover     BOOLEAN     DEFAULT FALSE,
+  assigned_staff     UUID        REFERENCES auth.users(id),
+  notes              TEXT,
+  admin_notes        TEXT,
+  metadata           JSONB       DEFAULT '{}'::jsonb,
+  user_id            UUID        REFERENCES auth.users(id),
+  created_at         TIMESTAMPTZ DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS orders_updated_at ON public.orders;
+CREATE TRIGGER orders_updated_at
+  BEFORE UPDATE ON public.orders
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_orders_customer_phone ON public.orders(customer_phone);
+CREATE INDEX IF NOT EXISTS idx_orders_status         ON public.orders(status);
+
+-- =========================================================
+-- 6. ORDER ITEMS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.order_items (
+  id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id      UUID        NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  product_id    UUID        REFERENCES public.products(id),
+  product_name  TEXT        NOT NULL,
+  variant_name  TEXT,
+  quantity      INTEGER     NOT NULL DEFAULT 1,
+  unit_price    NUMERIC     NOT NULL,
+  total_price   NUMERIC     NOT NULL,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON public.order_items(order_id);
+
+-- =========================================================
+-- 7. PAYMENTS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.payments (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_phone  TEXT        NOT NULL,
+  order_id        UUID        REFERENCES public.orders(id) ON DELETE SET NULL,
+  utr             TEXT,
+  amount          NUMERIC,
+  payment_method  TEXT        DEFAULT 'upi',
+  screenshot_url  TEXT,
+  verified_by     UUID        REFERENCES auth.users(id),
+  verified_at     TIMESTAMPTZ,
+  admin_notes     TEXT,
+  status          TEXT        DEFAULT 'pending'
+                              CHECK (status IN ('pending', 'verified', 'failed')),
+  metadata        JSONB       DEFAULT '{}'::jsonb,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS idx_payments_customer_phone ON public.payments(customer_phone);
+CREATE INDEX IF NOT EXISTS idx_payments_status         ON public.payments(status);
+
+-- =========================================================
+-- 8. INVENTORY
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.inventory (
+  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                TEXT        NOT NULL,
+  current_stock       DECIMAL(10,2) NOT NULL DEFAULT 0,
+  unit                TEXT        NOT NULL,
+  low_stock_threshold DECIMAL(10,2) NOT NULL DEFAULT 5,
+  product_id          UUID        REFERENCES public.products(id) ON DELETE CASCADE,
+  last_updated        TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_product_id ON public.inventory(product_id);
+
+-- =========================================================
+-- 9. WHATSAPP MESSAGES
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.whatsapp_messages (
+  id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  whatsapp_id           TEXT        UNIQUE,
+  customer_phone        TEXT        NOT NULL,
+  direction             TEXT        NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+  sender_type           TEXT        DEFAULT 'bot' CHECK (sender_type IN ('bot', 'staff', 'system')),
+  content               TEXT        NOT NULL,
+  message_type          TEXT        DEFAULT 'text',
+  media_url             TEXT,
+  reply_to_message_id   TEXT,
+  is_read               BOOLEAN     DEFAULT FALSE,
+  status                TEXT        DEFAULT 'sent'
+                                    CHECK (status IN ('sent', 'delivered', 'read', 'failed')),
+  metadata              JSONB       DEFAULT '{}'::jsonb,
+  created_at            TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.whatsapp_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_phone      ON public.whatsapp_messages(customer_phone);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_created_at ON public.whatsapp_messages(created_at DESC);
+
+-- =========================================================
+-- 10. WHATSAPP SESSIONS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.whatsapp_sessions (
+  phone_number       TEXT        PRIMARY KEY,
+  state              TEXT        NOT NULL DEFAULT 'START',
+  data               JSONB       DEFAULT '{}'::jsonb,
+  cart               JSONB       DEFAULT '[]'::jsonb,
+  customer_name      TEXT,
+  selected_category  TEXT,
+  delivery_type      TEXT,
+  current_order_id   UUID,
+  last_interaction   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =========================================================
+-- 11. PROCESSED MESSAGES (dedup webhook)
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.processed_messages (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id  TEXT        UNIQUE NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.processed_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS idx_processed_messages_message_id ON public.processed_messages(message_id);
+
+-- =========================================================
+-- 12. CONVERSATION STATE
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.conversation_state (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_phone  TEXT        UNIQUE NOT NULL,
+  current_state   TEXT        DEFAULT 'idle',
+  context         JSONB       DEFAULT '{}'::jsonb,
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.conversation_state ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS set_conversation_state_updated_at ON public.conversation_state;
+CREATE TRIGGER set_conversation_state_updated_at
+  BEFORE UPDATE ON public.conversation_state
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+-- =========================================================
+-- 13. TEMP OTPS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.temp_otps (
+  id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  email      TEXT,
+  mobile     TEXT,
+  type       TEXT        CHECK (type IN ('email', 'whatsapp')),
+  otp        TEXT        NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =========================================================
+-- 14. STAFF NOTIFICATIONS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.staff_notifications (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_phone  TEXT        NOT NULL,
+  type            TEXT,
+  title           TEXT,
+  message         TEXT        NOT NULL,
+  resolved        BOOLEAN     DEFAULT FALSE,
+  metadata        JSONB       DEFAULT '{}'::jsonb,
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  resolved_at     TIMESTAMPTZ
+);
+
+ALTER TABLE public.staff_notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS idx_staff_notifications_phone    ON public.staff_notifications(customer_phone);
+CREATE INDEX IF NOT EXISTS idx_staff_notifications_resolved ON public.staff_notifications(resolved);
+
+-- =========================================================
+-- 15. CHAT ASSIGNMENTS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.chat_assignments (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_phone  TEXT        NOT NULL,
+  assigned_to     UUID        REFERENCES auth.users(id) ON DELETE SET NULL,
+  assigned_by     UUID        REFERENCES auth.users(id) ON DELETE SET NULL,
+  active          BOOLEAN     DEFAULT TRUE,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.chat_assignments ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS idx_chat_assignments_phone ON public.chat_assignments(customer_phone);
+
+-- =========================================================
+-- 16. CUSTOMER TAGS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.customer_tags (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_phone  TEXT        NOT NULL,
+  tag             TEXT        NOT NULL,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.customer_tags ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS idx_customer_tags_phone ON public.customer_tags(customer_phone);
+
+-- =========================================================
+-- 17. AI LOGS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.ai_logs (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_phone  TEXT,
+  model           TEXT,
+  model_used      TEXT,
+  prompt          TEXT,
+  response        TEXT,
+  success         BOOLEAN     DEFAULT TRUE,
+  error           TEXT,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.ai_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS idx_ai_logs_customer_phone ON public.ai_logs(customer_phone);
+
+-- =========================================================
+-- 18. SITE CONTENT
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.site_content (
+  id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  key        TEXT        UNIQUE NOT NULL,
+  value      TEXT        NOT NULL,
+  category   TEXT        DEFAULT 'general',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =========================================================
+-- 19. ROW LEVEL SECURITY POLICIES
+-- =========================================================
+
+DO $$
+BEGIN
+
+  -- PROFILES
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can view their own profile') THEN
+    CREATE POLICY "Users can view their own profile"
+      ON public.profiles FOR SELECT USING (auth.uid() = id);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can update their own profile') THEN
+    CREATE POLICY "Users can update their own profile"
+      ON public.profiles FOR UPDATE USING (auth.uid() = id);
+  END IF;
+
+  -- PRODUCTS
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public read') THEN
+    CREATE POLICY "Allow public read" ON public.products FOR SELECT USING (true);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow admin all') THEN
+    CREATE POLICY "Allow admin all" ON public.products FOR ALL
+      USING (auth.role() = 'authenticated')
+      WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+
+  -- PROCESSED MESSAGES
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow admin all processed_messages') THEN
+    CREATE POLICY "Allow admin all processed_messages"
+      ON public.processed_messages FOR ALL
+      USING (auth.role() = 'authenticated')
+      WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+
+  -- AI LOGS
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow admin all ai_logs') THEN
+    CREATE POLICY "Allow admin all ai_logs"
+      ON public.ai_logs FOR ALL
+      USING (auth.role() = 'authenticated')
+      WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+
+  -- ORDER ITEMS
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow authenticated access order_items') THEN
+    CREATE POLICY "Allow authenticated access order_items"
+      ON public.order_items FOR ALL
+      USING (auth.role() = 'authenticated')
+      WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+
+  -- STAFF NOTIFICATIONS
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow admin all staff_notifications') THEN
+    CREATE POLICY "Allow admin all staff_notifications"
+      ON public.staff_notifications FOR ALL
+      USING (auth.role() = 'authenticated')
+      WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+
+  -- CHAT ASSIGNMENTS
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow admin all chat_assignments') THEN
+    CREATE POLICY "Allow admin all chat_assignments"
+      ON public.chat_assignments FOR ALL
+      USING (auth.role() = 'authenticated')
+      WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+
+  -- CUSTOMER TAGS
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow admin all customer_tags') THEN
+    CREATE POLICY "Allow admin all customer_tags"
+      ON public.customer_tags FOR ALL
+      USING (auth.role() = 'authenticated')
+      WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+
+END $$;
+
+-- =========================================================
+-- 20. STORAGE POLICIES
+-- (Ensure 'products' and 'payment-screenshots' buckets exist)
+-- =========================================================
+
+DO $$
+BEGIN
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Access' AND tablename = 'objects') THEN
+    CREATE POLICY "Public Access" ON storage.objects FOR SELECT USING (bucket_id = 'products');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admin Upload' AND tablename = 'objects') THEN
+    CREATE POLICY "Admin Upload" ON storage.objects FOR INSERT
+      WITH CHECK (bucket_id = 'products' AND auth.role() = 'authenticated');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admin Update' AND tablename = 'objects') THEN
+    CREATE POLICY "Admin Update" ON storage.objects FOR UPDATE
+      USING (bucket_id = 'products' AND auth.role() = 'authenticated');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admin Delete' AND tablename = 'objects') THEN
+    CREATE POLICY "Admin Delete" ON storage.objects FOR DELETE
+      USING (bucket_id = 'products' AND auth.role() = 'authenticated');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow payment screenshot uploads') THEN
+    CREATE POLICY "Allow payment screenshot uploads"
+      ON storage.objects FOR INSERT TO authenticated
+      WITH CHECK (bucket_id = 'payment-screenshots');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow payment screenshot viewing') THEN
+    CREATE POLICY "Allow payment screenshot viewing"
+      ON storage.objects FOR SELECT TO authenticated
+      USING (bucket_id = 'payment-screenshots');
+  END IF;
+
+END $$;
+
+-- =========================================================
+-- 21. AUTH TRIGGER: auto-create profile on signup
+-- =========================================================
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (id, full_name, email, mobile, email_verified, mobile_verified)
+  VALUES (
+    NEW.id,
+    NEW.raw_user_meta_data->>'full_name',
+    NEW.email,
+    NEW.raw_user_meta_data->>'mobile',
+    COALESCE((NEW.raw_user_meta_data->>'email_verified')::boolean, false),
+    COALESCE((NEW.raw_user_meta_data->>'mobile_verified')::boolean, false)
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- =========================================================
+-- 22. SEED DATA — PRODUCTS
+-- =========================================================
+
+INSERT INTO public.products (name, description, price, category, image, tags, variations) VALUES
+  ('Classic Chocolate Jar', 'Rich Belgian chocolate layers with silky ganache.', 180.00, 'Jar Cakes',
+   'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&q=80',
+   '{"Best Seller","Chocolate"}', '[{"name":"250g","price":180.00}]'),
+  ('Red Velvet Dream',       'Velvety sponge with cream cheese frosting.',          220.00, 'Jar Cakes',
+   'https://images.unsplash.com/photo-1586788680434-30d324671ff6?auto=format&fit=crop&q=80',
+   '{"Popular"}',            '[{"name":"250g","price":220.00}]'),
+  ('Fudgy Brownie Box',      'Set of 6 ultra-fudgy dark chocolate brownies.',       450.00, 'Brownies',
+   'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?auto=format&fit=crop&q=80',
+   '{"Eggless"}',            '[{"name":"250g","price":450.00}]'),
+  ('Brownie Box',            'Rich chocolate brownies.',                            250.00, 'brownies',   NULL, '{}', '[]'),
+  ('Vanilla Tea Cake',       'Soft vanilla tea cake.',                              180.00, 'tea_cakes',  NULL, '{}', '[]'),
+  ('Chocolate Tea Cake',     'Chocolate flavored tea cake.',                        220.00, 'tea_cakes',  NULL, '{}', '[]'),
+  ('Butter Cookies',         'Fresh homemade butter cookies.',                      150.00, 'cookies',    NULL, '{}', '[]')
+ON CONFLICT DO NOTHING;
+
+-- =========================================================
+-- 23. SEED DATA — SITE CONTENT
+-- =========================================================
+
+INSERT INTO public.site_content (key, value, category) VALUES
+  ('brand_name',       'Jars of Joy 🍯',            'general'),
+  ('welcome_message',  'Welcome to Jars of Joy 🧁',  'general'),
+  ('business_name',    'Jars of Joy',                'general'),
+  ('contact_phone',    '+91 76959 64392',             'contact'),
+  ('whatsapp_number',  '+917695964392',               'contact'),
+  ('support_phone',    '+91XXXXXXXXXX',               'contact'),
+  ('upi_id',           'yourupi@okaxis',              'payment'),
+  ('upi_name',         'Jars of Joy',                 'payment'),
+  ('delivery_area',    'Coimbatore',                  'business'),
+  ('business_hours',   '9 AM - 8 PM',                'business'),
+  ('support_message',  'We will help you shortly 💛', 'support')
+ON CONFLICT (key) DO NOTHING;
+
+-- =========================================================
+-- 24. BACKFILL DEFAULTS
+-- =========================================================
+
+UPDATE public.customers SET onboarding_status = 'done'  WHERE name IS NOT NULL;
+UPDATE public.customers SET support_status    = 'bot'   WHERE support_status IS NULL;
+
+-- =========================================================
+-- 25. REALTIME (uncomment in Dashboard if needed)
+-- ALTER PUBLICATION supabase_realtime ADD TABLE orders;
+-- ALTER PUBLICATION supabase_realtime ADD TABLE inventory;
+-- ALTER PUBLICATION supabase_realtime ADD TABLE whatsapp_messages;
+-- ALTER PUBLICATION supabase_realtime ADD TABLE staff_notifications;
+-- =========================================================
+
+-- =========================================================
+-- 26. VERIFY
+-- =========================================================
+
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+ORDER BY table_name;

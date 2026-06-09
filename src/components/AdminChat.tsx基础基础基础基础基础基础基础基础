@@ -1,0 +1,495 @@
+import { useState, useEffect, useRef } from 'react';
+import { supabase } from '../lib/supabase';
+import { motion, AnimatePresence } from 'framer-motion';
+import { MessageSquare, Send, User, Bot, ShieldCheck, RefreshCw, Search, Phone, MoreVertical, Paperclip, Smile, ShieldAlert, History, Clock, Check, CheckCheck } from 'lucide-react';
+import { useToastStore } from '../store/useToastStore';
+
+interface Customer {
+  id: string;
+  phone: string;
+  name: string | null;
+  human_override: boolean;
+  support_status: string;
+  updated_at: string;
+  last_message?: string;
+}
+
+interface Message {
+  id: string;
+  customer_phone: string;
+  content: string;
+  direction: 'inbound' | 'outbound';
+  sender_type: 'bot' | 'staff' | 'system';
+  created_at: string;
+  status?: 'sent' | 'delivered' | 'read';
+}
+
+export const AdminChat = () => {
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewValue] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [hasMore, setHasMore] = useState(true);
+  const { addToast } = useToastStore();
+  
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetchCustomers();
+    
+    const messageChannel = supabase
+      .channel('whatsapp-core')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages' }, (payload) => {
+        const msg = payload.new as Message;
+        if (selectedCustomer && msg.customer_phone === selectedCustomer.phone) {
+          setMessages(prev => [...prev, msg]);
+          markAsRead(msg.id);
+        }
+        updateCustomerListWithNewMessage(msg);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'customers' }, (payload) => {
+        const updated = payload.new as Customer;
+        setCustomers(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c));
+        if (selectedCustomer?.id === updated.id) {
+          setSelectedCustomer(prev => prev ? { ...prev, ...updated } : null);
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(messageChannel); };
+  }, [selectedCustomer]);
+
+  useEffect(() => {
+    if (selectedCustomer) {
+      setMessages([]);
+      setHasMore(true);
+      fetchMessages(selectedCustomer.phone, true);
+    }
+  }, [selectedCustomer?.phone]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const updateCustomerListWithNewMessage = (msg: Message) => {
+    setCustomers(prev => {
+      const index = prev.findIndex(c => c.phone === msg.customer_phone);
+      if (index === -1) return prev;
+      
+      const updated = [...prev];
+      updated[index] = { 
+        ...updated[index], 
+        last_message: msg.content,
+        updated_at: msg.created_at 
+      };
+      return updated.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    });
+  };
+
+  const fetchCustomers = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*, whatsapp_messages(content, created_at)')
+        .order('updated_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      if (data) {
+        const formatted = data.map((c: any) => ({
+          ...c,
+          last_message: c.whatsapp_messages?.[0]?.content || 'Start a conversation'
+        }));
+        setCustomers(formatted);
+      }
+    } catch (err: any) {
+      addToast(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMessages = async (phone: string, isInitial = false) => {
+    if (loadingHistory) return;
+    setLoadingHistory(true);
+    
+    try {
+      const query = supabase
+        .from('whatsapp_messages')
+        .select('*')
+        .eq('customer_phone', phone)
+        .order('created_at', { ascending: false })
+        .limit(30);
+
+      if (!isInitial && messages.length > 0) {
+        query.lt('created_at', messages[0].created_at);
+      }
+
+      const { data, error } = await query;
+      
+      if (error) throw error;
+
+      if (data) {
+        const newMsgs = [...data].reverse() as Message[];
+        if (data.length < 30) setHasMore(false);
+        
+        setMessages(prev => isInitial ? newMsgs : [...newMsgs, ...prev]);
+        
+        const unread = (data as Message[]).filter(m => m.direction === 'inbound' && m.status !== 'read');
+        unread.forEach(m => markAsRead(m.id));
+      }
+    } catch (err: any) {
+      addToast(err.message, 'error');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const markAsRead = async (id: string) => {
+    await (supabase.from('whatsapp_messages') as any).update({ status: 'read' }).eq('id', id);
+  };
+
+  const handleTakeover = async () => {
+    if (!selectedCustomer) return;
+
+    try {
+      const { error } = await (supabase
+        .from('customers') as any)
+        .update({ human_override: true, support_status: 'human' })
+        .eq('phone', selectedCustomer.phone);
+
+      if (error) throw error;
+
+      await (supabase.from('whatsapp_messages') as any).insert([{
+        customer_phone: selectedCustomer.phone,
+        content: "✨ Owner Snahe entered the chat for support. Bot is now disabled.",
+        direction: 'outbound',
+        sender_type: 'system'
+      }]);
+
+      addToast('Direct support enabled!', 'sweet');
+    } catch (err: any) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const handleResumeBot = async () => {
+    if (!selectedCustomer) return;
+
+    try {
+      const { error } = await (supabase
+        .from('customers') as any)
+        .update({ human_override: false, support_status: 'bot' })
+        .eq('phone', selectedCustomer.phone);
+
+      if (error) throw error;
+
+      await (supabase.from('whatsapp_messages') as any).insert([{
+        customer_phone: selectedCustomer.phone,
+        content: "🍭 Support session ended. Bot is now resumed.",
+        direction: 'outbound',
+        sender_type: 'system'
+      }]);
+
+      addToast('Bot is back in charge!', 'sweet');
+    } catch (err: any) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer || !newMessage.trim() || sending) return;
+
+    setSending(true);
+    const content = newMessage.trim();
+    setNewValue('');
+
+    try {
+      const { error } = await (supabase.from('whatsapp_messages') as any).insert([{
+        customer_phone: selectedCustomer.phone,
+        content,
+        direction: 'outbound',
+        sender_type: 'staff',
+        status: 'sent'
+      }]);
+
+      if (error) throw error;
+    } catch (err: any) {
+      setNewValue(content);
+      addToast(err.message, 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const filteredCustomers = customers.filter(c => 
+    c.phone.includes(searchTerm) || 
+    c.name?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="h-[calc(100vh-6rem)] flex overflow-hidden fluid-glass rounded-[3.5rem] shadow-layer-3 border-white/60 bg-white/20">
+      {/* Sidebar */}
+      <div className="w-full md:w-80 lg:w-[400px] border-r border-brand/5 flex flex-col bg-white/40">
+        <div className="p-8 space-y-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-3xl font-black text-brand-dark tracking-tight">Support Hub</h2>
+              <p className="text-[10px] font-black text-brand-dark/30 uppercase tracking-[0.2em] mt-1">Direct from Coimbatore</p>
+            </div>
+            <div className="p-3 bg-brand text-white rounded-2xl shadow-lg shadow-brand/20">
+               <MessageSquare size={20} />
+            </div>
+          </div>
+          <div className="relative group">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-brand/30 group-focus-within:text-brand transition-colors" size={18} />
+            <input 
+              type="text"
+              placeholder="Search conversations..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full h-14 pl-14 pr-6 bg-white/60 rounded-3xl border-2 border-transparent focus:border-brand/20 outline-none font-bold text-sm transition-all shadow-inner"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto no-scrollbar pb-10">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20 opacity-20">
+              <RefreshCw className="animate-spin text-brand" size={32} />
+            </div>
+          ) : filteredCustomers.length === 0 ? (
+            <div className="text-center py-20 opacity-20 italic">
+               <p className="font-bold">No active conversations</p>
+            </div>
+          ) : (
+            filteredCustomers.map(customer => (
+              <div 
+                key={customer.id}
+                onClick={() => setSelectedCustomer(customer)}
+                className={`p-6 flex items-center gap-5 cursor-pointer transition-all border-b border-brand/5 relative group/item ${selectedCustomer?.id === customer.id ? 'bg-white shadow-md z-10' : 'hover:bg-white/40'}`}
+              >
+                <div className="relative">
+                  <div className="w-16 h-16 bg-blush rounded-3xl flex items-center justify-center text-brand shadow-inner border border-white group-hover/item:scale-105 transition-transform duration-500 overflow-hidden">
+                    <User size={28} />
+                  </div>
+                  {customer.human_override && (
+                    <div className="absolute -top-1 -right-1 w-6 h-6 bg-brand text-white rounded-full flex items-center justify-center shadow-lg animate-pulse border-2 border-white">
+                      <ShieldAlert size={12} />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-center mb-1">
+                    <p className="font-black text-brand-dark truncate text-base">{customer.name || 'Artisanal Guest'}</p>
+                    <span className="text-[9px] font-black text-brand-dark/20 uppercase whitespace-nowrap">
+                       {new Date(customer.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold text-brand-dark/40 truncate flex-1 leading-none mb-0.5">
+                      {customer.last_message}
+                    </p>
+                    {customer.human_override && <span className="w-2 h-2 bg-brand rounded-full shrink-0" />}
+                  </div>
+                  <p className="text-[9px] font-black text-brand/30 tracking-widest uppercase mt-1.5 flex items-center gap-1">
+                    <Phone size={8} /> {customer.phone}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Main Chat Window */}
+      <div className="flex-1 flex flex-col bg-[#FDF2F4]/30 relative backdrop-blur-sm">
+        <AnimatePresence mode="wait">
+          {selectedCustomer ? (
+            <motion.div 
+              key={selectedCustomer.id}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="flex-1 flex flex-col h-full"
+            >
+              {/* Chat Header */}
+              <div className="p-6 sm:p-8 bg-white/70 backdrop-blur-2xl border-b border-brand/5 flex justify-between items-center shadow-sm z-30">
+                <div className="flex items-center gap-5">
+                   <div className="w-14 h-14 bg-blush rounded-2xl flex items-center justify-center text-brand border border-white shadow-soft relative">
+                      <User size={28} />
+                      <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white shadow-sm" />
+                   </div>
+                   <div>
+                      <h3 className="font-black text-brand-dark text-xl leading-tight">{selectedCustomer.name || 'Support Guest'}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                         <span className={`w-1.5 h-1.5 rounded-full ${selectedCustomer.human_override ? 'bg-brand animate-pulse' : 'bg-green-500'}`} />
+                         <p className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30">
+                           {selectedCustomer.human_override ? 'Human Support Active' : 'AI Baker Monitoring'}
+                         </p>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="hidden sm:flex items-center gap-3 pr-4 border-r border-brand/10">
+                     <button className="p-3 text-brand-dark/30 hover:text-brand transition-colors"><Phone size={20}/></button>
+                     <button className="p-3 text-brand-dark/30 hover:text-brand transition-colors"><Search size={20}/></button>
+                  </div>
+                  {selectedCustomer.human_override ? (
+                    <button 
+                      onClick={handleResumeBot}
+                      className="px-8 h-14 bg-green-500 text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center gap-3 shadow-lg shadow-green-500/20 hover:scale-105 active:scale-95 transition-all"
+                    >
+                      <Bot size={20} /> Resume Bot
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={handleTakeover}
+                      className="px-8 h-14 bg-brand text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center gap-3 shadow-lg shadow-brand/20 hover:scale-105 active:scale-95 transition-all"
+                    >
+                      <ShieldAlert size={20} /> Takeover
+                    </button>
+                  )}
+                  <button className="p-3.5 bg-white rounded-2xl text-brand-dark/20 hover:text-brand transition-colors shadow-soft border border-brand/5">
+                    <MoreVertical size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Messages Area */}
+              <div 
+                ref={scrollContainerRef}
+                className="flex-1 overflow-y-auto p-10 space-y-8 no-scrollbar bg-pattern-light"
+              >
+                {hasMore && (
+                  <div className="flex justify-center pb-8">
+                     <button 
+                       onClick={() => fetchMessages(selectedCustomer.phone)}
+                       disabled={loadingHistory}
+                       className="px-6 py-2.5 bg-white/60 hover:bg-white text-brand font-black text-[10px] uppercase tracking-widest rounded-full border border-brand/10 shadow-sm transition-all flex items-center gap-3"
+                     >
+                       {loadingHistory ? <RefreshCw size={14} className="animate-spin" /> : <History size={14} />}
+                       Load Older Memories
+                     </button>
+                  </div>
+                )}
+
+                {messages.map((msg, idx) => {
+                  const isOutbound = msg.direction === 'outbound';
+                  const isSystem = msg.sender_type === 'system';
+                  const showDateHeader = idx === 0 || 
+                    new Date(msg.created_at).toLocaleDateString() !== new Date(messages[idx-1].created_at).toLocaleDateString();
+
+                  return (
+                    <div key={msg.id} className="space-y-8">
+                      {showDateHeader && (
+                        <div className="flex justify-center">
+                           <span className="bg-white/40 backdrop-blur-md px-5 py-1.5 rounded-full text-[9px] font-black text-brand-dark/30 uppercase tracking-widest border border-brand/5">
+                              {new Date(msg.created_at).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}
+                           </span>
+                        </div>
+                      )}
+
+                      {isSystem ? (
+                        <div className="flex justify-center">
+                          <div className="bg-brand/5 border border-brand/10 px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black text-brand uppercase tracking-widest shadow-sm flex items-center gap-3">
+                             <Clock size={14} className="opacity-40" /> {msg.content}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}>
+                          <motion.div 
+                            initial={{ scale: 0.9, opacity: 0, y: 10 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            className={`max-w-[75%] lg:max-w-[60%] p-6 rounded-[2.5rem] shadow-soft relative border-2 ${isOutbound ? 'bg-brand text-white border-brand/5 rounded-tr-none' : 'bg-white text-brand-dark border-brand/10 rounded-tl-none'}`}
+                          >
+                            <div className="flex items-center justify-between gap-4 mb-2">
+                              <div className="flex items-center gap-2">
+                                {isOutbound ? (
+                                  msg.sender_type === 'bot' ? <Bot size={14} className="opacity-60" /> : <ShieldCheck size={14} className="opacity-60" />
+                                ) : <User size={14} className="opacity-30" />}
+                                <span className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                                   {isOutbound ? (msg.sender_type === 'bot' ? 'AIBaker' : 'Owner Snahe') : 'Customer'}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="font-bold text-base leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                            <div className={`mt-3 flex items-center justify-end gap-2 text-[9px] font-black uppercase tracking-widest ${isOutbound ? 'text-white/40' : 'text-brand-dark/20'}`}>
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {isOutbound && (
+                                msg.status === 'read' ? <CheckCheck size={14} className="text-white" /> : <Check size={14} />
+                              )}
+                            </div>
+                          </motion.div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <div ref={chatEndRef} className="h-4" />
+              </div>
+
+              {/* Input Area */}
+              <div className="p-8 bg-white/70 backdrop-blur-2xl border-t border-brand/5">
+                <form onSubmit={handleSendMessage} className="max-w-5xl mx-auto flex items-center gap-6">
+                  <div className="flex items-center gap-2">
+                    <button type="button" className="p-4 text-brand-dark/30 hover:text-brand hover:bg-brand/5 rounded-2xl transition-all"><Paperclip size={28}/></button>
+                    <button type="button" className="p-4 text-brand-dark/30 hover:text-brand hover:bg-brand/5 rounded-2xl transition-all"><Smile size={28}/></button>
+                  </div>
+                  
+                  <div className="flex-1 relative">
+                    <textarea 
+                      placeholder={selectedCustomer.human_override ? "Write artisanal response..." : "Takeover control to reply directly..."}
+                      value={newMessage}
+                      onChange={(e) => setNewValue(e.target.value)}
+                      onKeyDown={(e) => {
+                         if (e.key === 'Enter' && !e.shiftKey) {
+                           e.preventDefault();
+                           handleSendMessage(e as any);
+                         }
+                      }}
+                      disabled={!selectedCustomer.human_override || sending}
+                      rows={1}
+                      className="w-full h-16 sm:h-20 pl-8 pr-16 bg-white rounded-[2.5rem] border-2 border-brand/10 focus:border-brand/30 outline-none font-bold text-brand-dark shadow-soft transition-all disabled:opacity-50 resize-none py-5 sm:py-7 flex items-center"
+                    />
+                  </div>
+                  
+                  <button 
+                    disabled={!selectedCustomer.human_override || sending || !newMessage.trim()}
+                    className="w-16 h-16 sm:w-20 sm:h-20 bg-brand text-white rounded-[2.5rem] flex items-center justify-center shadow-xl shadow-brand/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:hover:scale-100 disabled:shadow-none"
+                  >
+                    {sending ? <RefreshCw className="animate-spin" size={28} /> : <Send size={28} />}
+                  </button>
+                </form>
+              </div>
+            </motion.div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center opacity-30 p-20 text-center">
+               <div className="w-40 h-40 bg-white rounded-[3rem] flex items-center justify-center mb-10 border-4 border-dashed border-brand/20 shadow-inner">
+                  <motion.div animate={{ rotate: [0, 10, -10, 0] }} transition={{ repeat: Infinity, duration: 2 }}>
+                    <MessageSquare size={64} className="text-brand" />
+                  </motion.div>
+               </div>
+               <h3 className="heading-serif text-5xl text-brand-dark mb-6">Joy Support Center</h3>
+               <p className="max-w-md mx-auto font-bold text-brand-dark/60 text-lg leading-relaxed">
+                  Select an artisanal guest from the sidebar to view their full chat history and provide personalized support.
+               </p>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+};
