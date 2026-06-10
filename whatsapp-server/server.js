@@ -47,6 +47,7 @@ let isExplicitLogout = false;
 let disconnectTimer = null;
 let telegramInterval = null;
 let wasAlertSent = false;
+let wasConnected = false;
 
 const authDir = path.join(__dirname, 'auth_info_baileys');
 if (!fs.existsSync(authDir)) {
@@ -124,33 +125,38 @@ async function connectToWhatsApp() {
         telegramInterval = null;
         console.log('[TELEGRAM] Connected. Cleared telegram interval.');
       }
-      if (wasAlertSent) {
-        sendTelegramMessage('✅ <b>WhatsApp Bot Connection Restored!</b>\nThe connection to your WhatsApp device is active and fully functional.');
-        wasAlertSent = false;
-      }
-    } else if (isExplicitLogout) {
-      if (disconnectTimer) {
-        clearTimeout(disconnectTimer);
-        disconnectTimer = null;
-      }
-      if (telegramInterval) {
-        clearInterval(telegramInterval);
-        telegramInterval = null;
+      
+      if (!wasConnected) {
+        sendTelegramMessage('✅ <b>WhatsApp Bot Connection Active!</b>\nThe connection to your WhatsApp device is active and fully functional.');
+        wasConnected = true;
       }
       wasAlertSent = false;
     } else {
-      if (!disconnectTimer && !telegramInterval && !wasAlertSent) {
-        console.log('[TELEGRAM] Starting 5-minute disconnect timer...');
-        disconnectTimer = setTimeout(() => {
-          sendTelegramMessage('⚠️ <b>WhatsApp Bot Alert</b>\nThe WhatsApp bot has been disconnected for more than 5 minutes. Please check the admin portal to scan the QR code or reconnect your device.');
-          wasAlertSent = true;
+      wasConnected = false;
+      if (isExplicitLogout) {
+        if (disconnectTimer) {
+          clearTimeout(disconnectTimer);
           disconnectTimer = null;
+        }
+        if (telegramInterval) {
+          clearInterval(telegramInterval);
+          telegramInterval = null;
+        }
+        wasAlertSent = false;
+      } else {
+        if (!disconnectTimer && !telegramInterval && !wasAlertSent) {
+          console.log('[TELEGRAM] Starting 5-minute disconnect timer...');
+          disconnectTimer = setTimeout(() => {
+            sendTelegramMessage('⚠️ <b>WhatsApp Bot Alert</b>\nThe WhatsApp bot has been disconnected for more than 5 minutes. Please check the admin portal to scan the QR code or reconnect your device.');
+            wasAlertSent = true;
+            disconnectTimer = null;
 
-          // Start interval notifications every 15 minutes
-          telegramInterval = setInterval(() => {
-            sendTelegramMessage('⚠️ <b>WhatsApp Bot Alert (Reminder)</b>\nThe WhatsApp bot is still offline. Notifications cannot be sent until the connection is restored.');
-          }, 15 * 60 * 1000);
-        }, 5 * 60 * 1000);
+            // Start interval notifications every 15 minutes
+            telegramInterval = setInterval(() => {
+              sendTelegramMessage('⚠️ <b>WhatsApp Bot Alert (Reminder)</b>\nThe WhatsApp bot is still offline. Notifications cannot be sent until the connection is restored.');
+            }, 15 * 60 * 1000);
+          }, 5 * 60 * 1000);
+        }
       }
     }
   };
