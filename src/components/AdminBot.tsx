@@ -5,6 +5,7 @@ import { FloatingCard } from './ui/FloatingCard';
 import { Settings, RefreshCw, Wifi, Loader2 } from 'lucide-react';
 import { useToastStore } from '../store/useToastStore';
 import { io } from 'socket.io-client';
+import { sendWhatsAppNotification } from '../lib/whatsapp';
 
 export const AdminBot = () => {
   const [config, setConfig] = useState<any[]>([]);
@@ -12,6 +13,8 @@ export const AdminBot = () => {
   const [qrCode, setQrCode] = useState<string>('');
   const [socket, setSocket] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [testPhone, setTestPhone] = useState('');
+  const [testingConnection, setTestingConnection] = useState(false);
   const { addToast } = useToastStore();
 
   const fetchConfig = async () => {
@@ -106,6 +109,22 @@ export const AdminBot = () => {
     }
   };
 
+  const handleTestMessage = async () => {
+    if (!testPhone) {
+      addToast('Please enter a test phone number (e.g. 919876543210)', 'info');
+      return;
+    }
+    setTestingConnection(true);
+    try {
+      await sendWhatsAppNotification(testPhone, 'Hello! 🍯🍰 This is a test message verifying the link between your storefront and Render WhatsApp bot.');
+      addToast('Test message sent successfully!', 'sweet');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to send test message', 'error');
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
       <div className="flex justify-between items-center animate-fade-in">
@@ -195,19 +214,45 @@ export const AdminBot = () => {
             )}
 
             {botStatus === 'Connected' && (
-              <div className="p-4 bg-green-50/50 border border-green-100 rounded-2xl space-y-2">
-                <p className="text-[11px] font-black text-green-700 uppercase tracking-wider">Device Linked Successfully</p>
-                <p className="text-[10px] font-semibold text-green-600/80 leading-relaxed">
-                  Your WhatsApp account is active and linked. The bot is ready to automatically send:
-                </p>
-                <ul className="text-[9px] font-bold text-green-700/70 space-y-1 list-disc list-inside">
-                  <li>Payment Requests</li>
-                  <li>Order details & lifecycle notifications</li>
-                  <li>Invoice PDFs</li>
-                  <li>OTP verification codes</li>
-                  <li>Password reset & change alerts</li>
-                  <li>Promotions & offers</li>
-                </ul>
+              <div className="space-y-4">
+                <div className="p-4 bg-green-50/50 border border-green-100 rounded-2xl space-y-2">
+                  <p className="text-[11px] font-black text-green-700 uppercase tracking-wider">Device Linked Successfully</p>
+                  <p className="text-[10px] font-semibold text-green-600/80 leading-relaxed">
+                    Your WhatsApp account is active and linked. The bot is ready to automatically send:
+                  </p>
+                  <ul className="text-[9px] font-bold text-green-700/70 space-y-1 list-disc list-inside">
+                    <li>Payment Requests</li>
+                    <li>Order details & lifecycle notifications</li>
+                    <li>Invoice PDFs</li>
+                    <li>OTP verification codes</li>
+                    <li>Password reset & change alerts</li>
+                    <li>Promotions & offers</li>
+                  </ul>
+                </div>
+
+                <div className="p-4 bg-brand/5 border border-brand-light/10 rounded-2xl space-y-3">
+                  <p className="text-[11px] font-black text-brand uppercase tracking-wider">Test Connection</p>
+                  <p className="text-[10px] font-bold text-brand-dark/50 leading-relaxed">
+                    Send a test message to verify the connection between Render and WhatsApp.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="tel"
+                      placeholder="Phone number (e.g. 919876543210)"
+                      value={testPhone}
+                      onChange={(e) => setTestPhone(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-white border border-brand-light/20 rounded-xl font-bold text-xs outline-none focus:border-brand/35 transition-all"
+                    />
+                    <Button3D
+                      variant="secondary"
+                      onClick={handleTestMessage}
+                      disabled={testingConnection}
+                      className="scale-90"
+                    >
+                      {testingConnection ? <RefreshCw className="animate-spin" size={14} /> : 'Send Test'}
+                    </Button3D>
+                  </div>
+                </div>
               </div>
             )}
 
