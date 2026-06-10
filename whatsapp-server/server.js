@@ -274,6 +274,15 @@ io.on('connection', (socket) => {
   });
 });
 
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.json({
+    status: 'active',
+    service: 'Jars of Joy WhatsApp Web Engine',
+    connection: currentStatus
+  });
+});
+
 // REST API for sending messages
 app.post('/send', async (req, res) => {
   if (currentStatus !== 'Connected' || !sock) {
