@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 export const sendEmailOtp = async (
   to_email: string, 
   otp: string, 
@@ -6,7 +8,14 @@ export const sendEmailOtp = async (
   expiry: string = '10 minutes'
 ) => {
   try {
-    const response = await fetch(`http://localhost:3001/send-email`, {
+    const { data: urlData } = await supabase
+      .from('site_content')
+      .select('value')
+      .eq('key', 'whatsapp_backend_url')
+      .single();
+    const backendUrl = (urlData as any)?.value || `http://${window.location.hostname}:3001`;
+
+    const response = await fetch(`${backendUrl}/send-email`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

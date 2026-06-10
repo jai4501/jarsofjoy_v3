@@ -23,40 +23,53 @@ export const AdminBot = () => {
   };
 
   useEffect(() => {
+    let activeSocket: any = null;
+
+    const initSocket = async () => {
+      const { data } = await supabase
+        .from('site_content')
+        .select('value')
+        .eq('key', 'whatsapp_backend_url')
+        .single();
+      
+      const socketUrl = (data as any)?.value || `http://${window.location.hostname}:3001`;
+      console.log('Connecting to WhatsApp socket at:', socketUrl);
+      
+      activeSocket = io(socketUrl, {
+        transports: ['websocket'],
+        reconnectionAttempts: 10,
+        reconnectionDelay: 2000,
+      });
+
+      activeSocket.on('connect', () => {
+        console.log('Socket.io connected to WhatsApp server');
+      });
+
+      activeSocket.on('status', (data: { status: string; qr?: string }) => {
+        console.log('Received WhatsApp status update:', data);
+        setBotStatus(data.status);
+        if (data.qr) {
+          setQrCode(data.qr);
+        } else {
+          setQrCode('');
+        }
+      });
+
+      activeSocket.on('disconnect', () => {
+        console.log('Socket.io disconnected from WhatsApp server');
+        setBotStatus('Disconnected');
+      });
+
+      setSocket(activeSocket);
+    };
+
     fetchConfig();
-
-    // Connect to the WhatsApp websocket server on port 3001
-    const socketUrl = `http://${window.location.hostname}:3001`;
-    console.log('Connecting to WhatsApp socket at:', socketUrl);
-    const newSocket = io(socketUrl, {
-      transports: ['websocket'],
-      reconnectionAttempts: 10,
-      reconnectionDelay: 2000,
-    });
-
-    newSocket.on('connect', () => {
-      console.log('Socket.io connected to WhatsApp server');
-    });
-
-    newSocket.on('status', (data: { status: string; qr?: string }) => {
-      console.log('Received WhatsApp status update:', data);
-      setBotStatus(data.status);
-      if (data.qr) {
-        setQrCode(data.qr);
-      } else {
-        setQrCode('');
-      }
-    });
-
-    newSocket.on('disconnect', () => {
-      console.log('Socket.io disconnected from WhatsApp server');
-      setBotStatus('Disconnected');
-    });
-
-    setSocket(newSocket);
+    initSocket();
 
     return () => {
-      newSocket.close();
+      if (activeSocket) {
+        activeSocket.close();
+      }
     };
   }, []);
 
