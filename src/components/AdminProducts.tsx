@@ -727,7 +727,7 @@ export const AdminProducts = () => {
 
                 <div className="flex gap-6 pt-4">
                   <Button3D variant="outline" className="flex-1 !h-16" onClick={() => { setShowModal(false); resetForm(); }}>Discard Changes</Button3D>
-                  <Button3D className="flex-[1.5] !h-16">
+                  <Button3D type="submit" className="flex-[1.5] !h-16">
                     {editingProduct ? 'Confirm Updates' : 'Launch Treat'}
                   </Button3D>
                 </div>
