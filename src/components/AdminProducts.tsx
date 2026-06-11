@@ -301,7 +301,6 @@ export const AdminProducts = () => {
       description, 
       price: parseFloat(price), 
       category, 
-      image: images[0] || '', // Legacy image field fallback
       images, // Primary source of truth
       tags: tagArray, 
       active,
