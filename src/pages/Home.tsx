@@ -318,7 +318,7 @@ export const Home = () => {
 
         <div className="flex-grow flex flex-col justify-between">
           <div className="space-y-1 mb-3 text-center">
-            <h4 className="font-serif text-lg font-black text-brand-dark group-hover:text-brand transition-colors line-clamp-1">{product.name}</h4>
+            <h4 className="font-serif text-lg font-black text-brand-dark group-hover:text-brand transition-colors leading-tight">{product.name}</h4>
             <p className="text-brand font-black text-base">₹{product.price}</p>
           </div>
 
@@ -383,7 +383,7 @@ export const Home = () => {
     }
   };
 
-  const activeCategories = categories.filter(c => (c as any).is_active !== false);
+  const activeCategories = categories.filter(c => (c as any).is_active !== false && !c.parent_id);
 
 
 

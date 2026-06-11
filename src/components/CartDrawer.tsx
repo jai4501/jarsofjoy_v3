@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingBag, X, Plus, Minus, Trash2, ArrowLeft, Send, CheckCircle2, Copy, MapPin, Truck, HelpCircle, Check, RefreshCw } from 'lucide-react';
+import { ShoppingBag, X, Plus, Minus, Trash2, ArrowLeft, Send, CheckCircle2, Copy, MapPin, Truck, HelpCircle, Check, RefreshCw, Edit } from 'lucide-react';
 import { useCartStore } from '../store/useCartStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useUserStore } from '../store/useUserStore';
@@ -36,6 +36,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const [selectedAddressId, setSelectedAddressId] = useState<string>('');
   const [showAddrForm, setShowAddrForm] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
 
   // Address Form State (Same subdivisions as profile section)
   const [addrLabel, setAddrLabel] = useState('Home');
@@ -117,6 +118,32 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     }
   };
 
+  const handleEditClick = (addr: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingAddressId(addr.id);
+    setAddrLabel(addr.label);
+    setDoorNo(addr.door_no);
+    setStreet(addr.street);
+    setArea(addr.area);
+    setPincode(addr.pincode);
+    setDistrict(addr.district || 'Coimbatore');
+    setLandmark(addr.landmark || '');
+    setShowAddrForm(true);
+  };
+
+  const handleCancelAddress = () => {
+    setEditingAddressId(null);
+    setDoorNo('');
+    setStreet('');
+    setArea('');
+    setPincode('');
+    setDistrict('');
+    setLandmark('');
+    setAddrLabel('Home');
+    setPostOffices([]);
+    setShowAddrForm(false);
+  };
+
   const handleSaveAddress = async () => {
     if (!user) return;
     if (!doorNo.trim() || !street.trim() || !area.trim() || !pincode.trim()) {
@@ -132,66 +159,84 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
     setSavingAddress(true);
     try {
-      // Ensure profile exists first
-      const { data: profileCheck } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', user.id)
-        .maybeSingle();
+      if (editingAddressId) {
+        const { error } = await (supabase
+          .from('addresses') as any)
+          .update({
+            label: addrLabel,
+            door_no: doorNo.trim(),
+            street: street.trim(),
+            area: area.trim(),
+            pincode: pincode.trim(),
+            district: district.trim() || 'Coimbatore',
+            landmark: landmark.trim() || null,
+          })
+          .eq('id', editingAddressId);
 
-      if (!profileCheck) {
-        console.log('Profile missing on save address, attempting to create default profile...');
-        const defaultProfile = {
-          id: user.id,
-          full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Sweet Customer',
-          email: user.email || '',
-          mobile: user.user_metadata?.mobile || null,
-          role: 'customer',
-          is_active: true
-        };
-        const { error: insertProfileError } = await (supabase.from('profiles') as any).insert([defaultProfile]);
-        if (insertProfileError) {
-          console.error('Failed to create fallback profile:', insertProfileError);
-          throw new Error(`Profile initialization failed: ${insertProfileError.message}`);
+        if (error) throw error;
+        addToast('Address updated!', 'sweet');
+
+        // Reset form
+        handleCancelAddress();
+
+        // Re-fetch and select
+        await fetchUserAddresses(user.id);
+        const updatedAddrText = `${doorNo.trim()}, ${street.trim()}, ${area.trim()}, ${district.trim() || 'Coimbatore'} - ${pincode.trim()}${landmark.trim() ? ` (Landmark: ${landmark.trim()})` : ''}`;
+        setDeliveryAddress(updatedAddrText);
+      } else {
+        // Ensure profile exists first
+        const { data: profileCheck } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!profileCheck) {
+          console.log('Profile missing on save address, attempting to create default profile...');
+          const defaultProfile = {
+            id: user.id,
+            full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Sweet Customer',
+            email: user.email || '',
+            mobile: user.user_metadata?.mobile || null,
+            role: 'customer',
+            is_active: true
+          };
+          const { error: insertProfileError } = await (supabase.from('profiles') as any).insert([defaultProfile]);
+          if (insertProfileError) {
+            console.error('Failed to create fallback profile:', insertProfileError);
+            throw new Error(`Profile initialization failed: ${insertProfileError.message}`);
+          }
         }
-      }
 
-      const { data, error } = await (supabase.from('addresses') as any)
-        .insert([{
-          profile_id: user.id,
-          label: addrLabel,
-          door_no: doorNo.trim(),
-          street: street.trim(),
-          area: area.trim(),
-          pincode: pincode.trim(),
-          district: district.trim() || 'Coimbatore',
-          state: 'Tamil Nadu',
-          landmark: landmark.trim() || null,
-          is_default: addresses.length === 0
-        }])
-        .select()
-        .single();
+        const { data, error } = await (supabase.from('addresses') as any)
+          .insert([{
+            profile_id: user.id,
+            label: addrLabel,
+            door_no: doorNo.trim(),
+            street: street.trim(),
+            area: area.trim(),
+            pincode: pincode.trim(),
+            district: district.trim() || 'Coimbatore',
+            state: 'Tamil Nadu',
+            landmark: landmark.trim() || null,
+            is_default: addresses.length === 0
+          }])
+          .select()
+          .single();
 
-      if (error) throw error;
+        if (error) throw error;
 
-      addToast('New address added!', 'sweet');
-      
-      // Reset form
-      setDoorNo('');
-      setStreet('');
-      setArea('');
-      setPincode('');
-      setDistrict('');
-      setLandmark('');
-      setAddrLabel('Home');
-      setPostOffices([]);
-      setShowAddrForm(false);
+        addToast('New address added!', 'sweet');
 
-      // Re-fetch and select
-      await fetchUserAddresses(user.id);
-      if (data) {
-        setSelectedAddressId(data.id);
-        setDeliveryAddress(`${data.door_no}, ${data.street}, ${data.area}, ${data.district} - ${data.pincode}${data.landmark ? ` (Landmark: ${data.landmark})` : ''}`);
+        // Reset form
+        handleCancelAddress();
+
+        // Re-fetch and select
+        await fetchUserAddresses(user.id);
+        if (data) {
+          setSelectedAddressId(data.id);
+          setDeliveryAddress(`${data.door_no}, ${data.street}, ${data.area}, ${data.district} - ${data.pincode}${data.landmark ? ` (Landmark: ${data.landmark})` : ''}`);
+        }
       }
     } catch (err: any) {
       addToast(err.message || 'Failed to save address', 'error');
@@ -220,6 +265,15 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   };
 
   const handlePlaceOrder = async () => {
+    if (!user) {
+      addToast('Please log in to place an order. Both email and WhatsApp number must be verified.', 'error');
+      return;
+    }
+    if (!profile?.email_verified || !profile?.mobile_verified) {
+      addToast('Both your email and WhatsApp number must be verified to place storefront orders. Please check your profile.', 'error');
+      return;
+    }
+
     if (!customerName.trim()) {
       addToast('Please enter your name', 'error');
       return;
@@ -537,7 +591,17 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                                           <span className="text-[8px] font-black uppercase tracking-widest text-brand bg-brand/10 px-2 py-0.5 rounded-full">
                                             {addr.label}
                                           </span>
-                                          {isSelected && <Check size={14} className="text-brand" />}
+                                          <div className="flex items-center gap-2">
+                                            <button 
+                                              type="button"
+                                              onClick={(e) => handleEditClick(addr, e)}
+                                              className="p-1 text-brand-dark/30 hover:text-brand transition-colors"
+                                              title="Edit Address"
+                                            >
+                                              <Edit size={12} />
+                                            </button>
+                                            {isSelected && <Check size={14} className="text-brand" />}
+                                          </div>
                                         </div>
                                         <p className="text-xs font-semibold text-brand-dark mt-1">
                                           {addr.door_no}, {addr.street}, {addr.area}
@@ -572,12 +636,12 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                                 <div className="bg-white/60 p-5 rounded-3xl border border-brand/5 space-y-4">
                                   <div className="flex justify-between items-center">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-brand">
-                                      {addresses.length === 0 ? 'No address yet. Add address to proceed:' : 'New Address Details'}
+                                      {editingAddressId ? 'Edit Address Details' : (addresses.length === 0 ? 'No address yet. Add address to proceed:' : 'New Address Details')}
                                     </p>
                                     {addresses.length > 0 && (
                                       <button
                                         type="button"
-                                        onClick={() => setShowAddrForm(false)}
+                                        onClick={handleCancelAddress}
                                         className="text-[10px] font-black uppercase tracking-widest text-brand-dark/45 hover:text-brand"
                                       >
                                         Cancel
@@ -692,7 +756,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                                     className="w-full h-12 bg-brand text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-1.5 mt-2"
                                   >
                                     {savingAddress ? <RefreshCw className="animate-spin" size={14} /> : <Check size={14} />}
-                                    Save Address to Proceed
+                                    {editingAddressId ? 'Update Address' : 'Save Address to Proceed'}
                                   </button>
                                 </div>
                               )}
@@ -792,7 +856,17 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
                 {step === 'cart' ? (
                   <Button3D 
-                    onClick={() => setStep('checkout')}
+                    onClick={() => {
+                      if (!user) {
+                        addToast('Please log in to place an order. Both email and WhatsApp number must be verified.', 'error');
+                        return;
+                      }
+                      if (!profile?.email_verified || !profile?.mobile_verified) {
+                        addToast('Both your email and WhatsApp number must be verified to place storefront orders. Please verify them in your profile settings.', 'error');
+                        return;
+                      }
+                      setStep('checkout');
+                    }}
                     className="w-full h-14 text-xs font-black uppercase tracking-widest rounded-full shadow-luxury"
                   >
                     Checkout Now

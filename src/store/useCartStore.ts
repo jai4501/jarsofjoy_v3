@@ -53,7 +53,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   addItem: (product) => {
     const currentItems = get().items;
     const existingItem = currentItems.find((item) => item.id === product.id);
-    let newItems: CartItem[] = [];
+    let newItems: CartItem[];
 
     if (existingItem) {
       newItems = currentItems.map((item) =>

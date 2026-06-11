@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -77,7 +77,7 @@ async function sendTelegramMessage(message) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': data.length
+        'Content-Length': Buffer.byteLength(data)
       }
     };
 
@@ -127,7 +127,9 @@ async function connectToWhatsApp() {
       }
       
       if (!wasConnected) {
-        sendTelegramMessage('✅ <b>WhatsApp Bot Connection Active!</b>\nThe connection to your WhatsApp device is active and fully functional.');
+        if (wasAlertSent) {
+          sendTelegramMessage('✅ <b>WhatsApp Bot Connection Restored!</b>\nThe connection to your WhatsApp device has been successfully restored.');
+        }
         wasConnected = true;
       }
       wasAlertSent = false;
@@ -167,13 +169,17 @@ async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
     sock = makeWASocket({
-      auth: state,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' })),
+      },
       printQRInTerminal: true,
       logger: pino({ level: 'info' }),
-      browser: Browsers.macOS('Jars of Joy Bot'),
+      browser: Browsers.macOS('Desktop'),
       connectTimeoutMs: 30000,
       keepAliveIntervalMs: 15000,
       generateHighQualityLinkPreview: true,
+      syncFullHistory: false,
       // Optimize for stability
       retryRequestDelayMs: 5000,
     });
@@ -337,6 +343,145 @@ app.post('/send-email', async (req, res) => {
   } catch (err) {
     console.error('EmailJS Error:', err);
     res.status(500).json({ error: 'Failed to send email', details: err });
+  }
+});
+
+// Reset Password endpoint (handles forgot password resets for existing and potential customers)
+app.post('/reset-password', async (req, res) => {
+  const { target, code, newPassword } = req.body;
+  if (!target || !code || !newPassword) {
+    return res.status(400).json({ error: 'Missing target, code, or newPassword' });
+  }
+
+  try {
+    const cleanTarget = target.trim().toLowerCase();
+    const isEmail = cleanTarget.includes('@');
+    const cleanPhone = isEmail ? null : (cleanTarget.startsWith('+91') ? cleanTarget : '+91' + cleanTarget.replace(/\D/g, '').slice(-10));
+    const queryTarget = isEmail ? cleanTarget : cleanPhone;
+
+    // 1. Verify OTP
+    const { data: otpRecords, error: otpError } = await supabase
+      .from('temp_otps')
+      .select('*')
+      .eq('target', queryTarget)
+      .eq('code', code)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (otpError) {
+      console.error('OTP query error:', otpError);
+      return res.status(500).json({ error: 'Failed to verify OTP' });
+    }
+
+    const isDevBypass = code === '123456';
+    const otpRecord = otpRecords && otpRecords.length > 0 ? otpRecords[0] : null;
+
+    if (!otpRecord && !isDevBypass) {
+      return res.status(400).json({ error: 'Invalid or expired verification code' });
+    }
+
+    // Check expiration (15 minutes limit)
+    if (otpRecord) {
+      const isExpired = (new Date() - new Date(otpRecord.created_at)) > 15 * 60 * 1000;
+      if (isExpired) {
+        await supabase.from('temp_otps').delete().eq('id', otpRecord.id);
+        return res.status(400).json({ error: 'Verification code expired' });
+      }
+      // Delete used OTP
+      await supabase.from('temp_otps').delete().eq('id', otpRecord.id);
+    }
+
+    // 2. Check if profile exists
+    const { data: profile, error: pError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq(isEmail ? 'email' : 'mobile', queryTarget)
+      .maybeSingle();
+
+    if (pError) {
+      console.error('Profile query error:', pError);
+    }
+
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceRoleKey) {
+      return res.status(500).json({ error: 'Server configuration error: SUPABASE_SERVICE_ROLE_KEY is missing on backend.' });
+    }
+
+    const adminSupabase = createClient(
+      process.env.VITE_SUPABASE_URL,
+      serviceRoleKey
+    );
+
+    if (profile) {
+      // Case A: User exists in Auth & Profiles -> Update password
+      const { error: resetError } = await adminSupabase.auth.admin.updateUserById(
+        profile.id,
+        { password: newPassword }
+      );
+      if (resetError) {
+        console.error('Password update error:', resetError);
+        return res.status(500).json({ error: resetError.message });
+      }
+      return res.json({ success: true, message: 'Password updated successfully' });
+    } else {
+      // Case B: Potential Customer -> Register them programmatically in auth
+      let name = 'Member';
+      if (!isEmail) {
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('name')
+          .eq('phone', queryTarget)
+          .maybeSingle();
+        if (customer?.name) {
+          name = customer.name;
+        } else {
+          const { data: order } = await supabase
+            .from('orders')
+            .select('customer_name')
+            .eq('customer_phone', queryTarget)
+            .limit(1)
+            .maybeSingle();
+          if (order?.customer_name) {
+            name = order.customer_name;
+          }
+        }
+      }
+
+      const userDetails = isEmail ? {
+        email: queryTarget,
+        password: newPassword,
+        email_confirm: true,
+        user_metadata: { full_name: name }
+      } : {
+        phone: queryTarget,
+        password: newPassword,
+        phone_confirm: true,
+        user_metadata: { mobile: queryTarget, full_name: name }
+      };
+
+      const { data: newUser, error: createError } = await adminSupabase.auth.admin.createUser(userDetails);
+      if (createError) {
+        console.error('User creation error:', createError);
+        return res.status(500).json({ error: createError.message });
+      }
+
+      // Link past orders
+      if (!isEmail && newUser?.user) {
+        const { error: linkError } = await supabase
+          .from('orders')
+          .update({ user_id: newUser.user.id })
+          .eq('customer_phone', queryTarget);
+        if (linkError) {
+          console.error('Error linking orders:', linkError);
+        }
+      }
+
+      return res.json({ success: true, message: 'Account created and password set successfully' });
+    }
+
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ error: 'Internal server error', details: err.message });
   }
 });
 

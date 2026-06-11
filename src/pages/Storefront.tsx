@@ -22,12 +22,25 @@ export const Storefront = () => {
   
   const { products, categories, isLoaded, fetchCatalog } = useProductStore();
   const [searchQuery, setSearchBar] = useState(searchParams.get('search') || '');
+  const [activeSubFilter, setActiveSubFilter] = useState<string>('All');
+
+  useEffect(() => {
+    setActiveSubFilter('All');
+  }, [categoryName]);
 
   const categoryCounts = (() => {
     const counts: Record<string, number> = {};
     products.forEach((p) => {
-      const cat = p.category || 'Uncategorized';
-      counts[cat] = (counts[cat] || 0) + 1;
+      const catName = p.category || 'Uncategorized';
+      counts[catName] = (counts[catName] || 0) + 1;
+      
+      const catRec = categories.find(c => c.name === catName);
+      if (catRec && catRec.parent_id) {
+        const parentRec = categories.find(c => c.id === catRec.parent_id);
+        if (parentRec) {
+          counts[parentRec.name] = (counts[parentRec.name] || 0) + 1;
+        }
+      }
     });
     return counts;
   })();
@@ -73,7 +86,7 @@ export const Storefront = () => {
     fetchCatalog();
   }, [fetchCatalog]);
 
-  const displayedCategories = categories.filter(c => (c as any).is_active !== false);
+  const displayedCategories = categories.filter(c => (c as any).is_active !== false && !c.parent_id);
 
   const handleAddToCart = (product: Product, variation?: { name: string; price: number }) => {
     if (product.stock_status === 'Out of Stock') {
@@ -97,8 +110,28 @@ export const Storefront = () => {
     setShowProductModal(true);
   };
 
+  const parentCategory = categories.find(c => c.name === categoryName);
+  const subCategories = parentCategory
+    ? categories.filter(c => c.parent_id === parentCategory.id && (c as any).is_active !== false)
+    : [];
+
   const filteredProducts = products.filter(p => {
-    const matchesCategory = !categoryName || p.category === categoryName;
+    let matchesCategory: boolean;
+    if (!categoryName) {
+      matchesCategory = true;
+    } else {
+      if (parentCategory) {
+        const subNames = subCategories.map(s => s.name);
+        if (activeSubFilter === 'All') {
+          matchesCategory = p.category === categoryName || subNames.includes(p.category || '');
+        } else {
+          matchesCategory = p.category === activeSubFilter;
+        }
+      } else {
+        matchesCategory = p.category === categoryName;
+      }
+    }
+
     const query = searchQuery.toLowerCase();
     const matchesSearch = p.name.toLowerCase().includes(query) || 
                           p.description?.toLowerCase().includes(query) ||
@@ -207,7 +240,7 @@ export const Storefront = () => {
         ) : (
           /* PRODUCT LIST MODE (Professional Desktop) */
           <div className="space-y-20 max-w-7xl mx-auto">
-            <div className="max-w-3xl mx-auto relative group mb-24">
+            <div className="max-w-3xl mx-auto relative group mb-12">
               <div className="absolute inset-y-0 left-8 flex items-center pointer-events-none text-brand/30 group-focus-within:text-brand transition-colors">
                 <Sparkles size={24} />
               </div>
@@ -219,6 +252,36 @@ export const Storefront = () => {
                 className="w-full h-20 pl-20 pr-8 bg-white/85 backdrop-blur-sm rounded-[2.5rem] border-2 border-brand/5 shadow-soft outline-none focus:border-brand/40 focus:bg-white transition-all font-bold text-lg text-brand-dark placeholder-brand-dark/55"
               />
             </div>
+
+            {/* Sub-categories horizontal selector tabs */}
+            {subCategories.length > 0 && (
+              <div className="flex justify-center flex-wrap gap-3 mb-16 animate-in fade-in slide-in-from-top-4 duration-300">
+                <button
+                  onClick={() => setActiveSubFilter('All')}
+                  className={`h-11 px-6 rounded-full font-black text-xs uppercase tracking-wider transition-all border ${
+                    activeSubFilter === 'All'
+                      ? 'bg-brand text-white border-brand shadow-md shadow-brand/10'
+                      : 'bg-white/60 hover:bg-white text-brand-dark/60 border-white/60 hover:border-brand/10 shadow-sm'
+                  }`}
+                >
+                  All {categoryName}
+                </button>
+                {subCategories.map(sub => (
+                  <button
+                    key={sub.id}
+                    onClick={() => setActiveSubFilter(sub.name)}
+                    className={`h-11 px-6 rounded-full font-black text-xs uppercase tracking-wider transition-all border flex items-center gap-2 ${
+                      activeSubFilter === sub.name
+                        ? 'bg-brand text-white border-brand shadow-md shadow-brand/10'
+                        : 'bg-white/60 hover:bg-white text-brand-dark/60 border-white/60 hover:border-brand/10 shadow-sm'
+                    }`}
+                  >
+                    <span>{sub.emoji || '🧁'}</span>
+                    <span>{sub.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {filteredProducts.length === 0 ? (
               <div className="text-center py-48 premium-card max-w-2xl mx-auto bg-white/40">
@@ -258,7 +321,7 @@ export const Storefront = () => {
                       </div>
                       
                       <div className="px-2 sm:px-6 pb-2 sm:pb-6 flex-grow flex flex-col items-center">
-                        <h3 className="text-xl sm:text-5xl font-black mb-3 sm:mb-6 text-brand-dark tracking-tight line-clamp-1 group-hover:text-brand transition-colors heading-serif">{product.name}</h3>
+                        <h3 className="text-xl sm:text-5xl font-black mb-3 sm:mb-6 text-brand-dark tracking-tight group-hover:text-brand transition-colors heading-serif leading-tight">{product.name}</h3>
                         
                         <div className="flex flex-wrap justify-center gap-2 mb-6 sm:mb-10 min-h-[20px]">
                           {product.variations && (product.variations as any).length > 0 && (

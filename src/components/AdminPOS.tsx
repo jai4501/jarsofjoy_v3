@@ -104,10 +104,108 @@ export const AdminPOS = () => {
       <POSCheckout
         cart={cart}
         onBack={() => setShowCheckout(false)}
-        onComplete={() => {
-          setCart([]);
-          setShowCheckout(false);
-          setIsCartOpen(false);
+        onComplete={async (orderData) => {
+          try {
+            // 1. Insert order record into database
+            const { data: order, error: orderError } = await (supabase
+              .from('orders') as any)
+              .insert([{
+                user_id: orderData.user_id,
+                customer_name: orderData.customer_name,
+                customer_phone: orderData.customer_phone,
+                address: orderData.address,
+                items: orderData.items,
+                total: orderData.total,
+                subtotal: orderData.subtotal,
+                delivery_charge: orderData.delivery_charge,
+                discount_amount: orderData.discount_amount,
+                coupon_code: orderData.coupon_code,
+                status: orderData.status,
+                payment_method: orderData.payment_method,
+                payment_status: orderData.payment_status,
+                order_source: orderData.order_source,
+                delivery_type: orderData.delivery_type
+              }])
+              .select()
+              .single();
+
+            if (orderError) throw orderError;
+
+            // 2. Insert order items
+            const orderItems = orderData.items.map((item: any) => {
+              const origProductId = item.id.includes('-') && item.id.split('-').length > 5 
+                ? item.id.split('-').slice(0, 5).join('-') 
+                : item.id;
+              const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+              const isValidUuid = uuidRegex.test(origProductId);
+
+              return {
+                order_id: order.id,
+                product_id: isValidUuid ? origProductId : null,
+                product_name: item.name,
+                quantity: item.quantity,
+                unit_price: item.price,
+                total_price: item.price * item.quantity
+              };
+            });
+
+            const { error: itemsError } = await supabase
+              .from('order_items')
+              .insert(orderItems);
+            
+            if (itemsError) throw itemsError;
+
+            // 3. Upsert customer in customers CRM
+            let cleanPhone = orderData.customer_phone.replace(/\D/g, '');
+            if (cleanPhone.length === 10) {
+              cleanPhone = '91' + cleanPhone;
+            }
+            if (!cleanPhone.startsWith('+')) {
+              cleanPhone = '+' + cleanPhone;
+            }
+
+            const { data: existingCustomer } = await (supabase
+              .from('customers') as any)
+              .select('*')
+              .eq('phone', cleanPhone)
+              .maybeSingle();
+
+            const customerObj = existingCustomer as any;
+
+            if (customerObj) {
+              const newTotalOrders = (customerObj.total_orders || 0) + 1;
+              const newTotalSpent = Number(customerObj.total_spent || 0) + Number(orderData.total);
+              
+              await (supabase.from('customers') as any)
+                .update({
+                  name: orderData.customer_name || customerObj.name,
+                  total_orders: newTotalOrders,
+                  total_spent: newTotalSpent,
+                  last_order_at: new Date().toISOString(),
+                  last_order_total: orderData.total
+                })
+                .eq('phone', cleanPhone);
+            } else {
+              await (supabase.from('customers') as any)
+                .insert([{
+                  phone: cleanPhone,
+                  name: orderData.customer_name || 'POS Customer',
+                  onboarding_status: 'done',
+                  total_orders: 1,
+                  total_spent: orderData.total,
+                  last_order_at: new Date().toISOString(),
+                  last_order_total: orderData.total
+                }]);
+            }
+
+            addToast('POS Order finalized and saved!', 'sweet');
+            setCart([]);
+            setShowCheckout(false);
+            setIsCartOpen(false);
+          } catch (err: any) {
+            console.error('Error finalizing POS order:', err);
+            addToast(err.message || 'Failed to finalize POS order', 'error');
+          }
         }}
       />
     );

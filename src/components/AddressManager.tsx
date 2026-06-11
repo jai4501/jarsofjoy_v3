@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FloatingCard } from './ui/FloatingCard';
 import { Button3D } from './ui/Button3D';
-import { MapPin, Plus, Trash2, Home, Briefcase, Bookmark, Check, RefreshCw } from 'lucide-react';
+import { MapPin, Plus, Trash2, Home, Briefcase, Bookmark, Check, RefreshCw, Edit } from 'lucide-react';
 import { useToastStore } from '../store/useToastStore';
 import { useUserStore } from '../store/useUserStore';
 
@@ -47,6 +47,20 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
   
   const [showAddrForm, setShowAddrForm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+
+  const handleEditClick = (addr: Address, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingAddressId(addr.id);
+    setAddrLabel(addr.label);
+    setDoorNo(addr.door_no);
+    setStreet(addr.street);
+    setArea(addr.area);
+    setPincode(addr.pincode);
+    setDistrict(addr.district);
+    setLandmark(addr.landmark || '');
+    setShowAddrForm(true);
+  };
 
   // Form State
   const [addrLabel, setAddrLabel] = useState('Home');
@@ -102,46 +116,64 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
 
     setLoading(true);
     try {
-      // Ensure profile exists first
-      const { data: profileCheck } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', user.id)
-        .maybeSingle();
+      if (editingAddressId) {
+        const { error } = await (supabase
+          .from('addresses') as any)
+          .update({
+            label: addrLabel,
+            door_no: doorNo.trim(),
+            street: street.trim(),
+            area: area.trim(),
+            pincode: pincode.trim(),
+            district: district.trim(),
+            landmark: landmark.trim() || null,
+          })
+          .eq('id', editingAddressId);
 
-      if (!profileCheck) {
-        console.log('Profile missing on save address, attempting to create default profile...');
-        const defaultProfile = {
-          id: user.id,
-          full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Sweet Customer',
-          email: user.email || '',
-          mobile: user.user_metadata?.mobile || null,
-          role: 'customer',
-          is_active: true
-        };
-        const { error: insertProfileError } = await (supabase.from('profiles') as any).insert([defaultProfile]);
-        if (insertProfileError) {
-          console.error('Failed to create fallback profile:', insertProfileError);
-          throw new Error(`Profile initialization failed: ${insertProfileError.message}`);
+        if (error) throw error;
+        addToast('Address updated successfully!', 'sweet');
+      } else {
+        // Ensure profile exists first
+        const { data: profileCheck } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!profileCheck) {
+          console.log('Profile missing on save address, attempting to create default profile...');
+          const defaultProfile = {
+            id: user.id,
+            full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Sweet Customer',
+            email: user.email || '',
+            mobile: user.user_metadata?.mobile || null,
+            role: 'customer',
+            is_active: true
+          };
+          const { error: insertProfileError } = await (supabase.from('profiles') as any).insert([defaultProfile]);
+          if (insertProfileError) {
+            console.error('Failed to create fallback profile:', insertProfileError);
+            throw new Error(`Profile initialization failed: ${insertProfileError.message}`);
+          }
         }
+
+        const { error } = await (supabase.from('addresses') as any).insert({
+          profile_id: user.id,
+          label: addrLabel,
+          door_no: doorNo.trim(),
+          street: street.trim(),
+          area: area.trim(),
+          pincode: pincode.trim(),
+          district: district.trim(),
+          state,
+          landmark: landmark.trim() || null,
+          is_default: addresses.length === 0
+        });
+
+        if (error) throw error;
+        addToast('New address added!', 'sweet');
       }
-
-      const { error } = await (supabase.from('addresses') as any).insert({
-        profile_id: user.id,
-        label: addrLabel,
-        door_no: doorNo.trim(),
-        street: street.trim(),
-        area: area.trim(),
-        pincode: pincode.trim(),
-        district: district.trim(),
-        state,
-        landmark: landmark.trim() || null,
-        is_default: addresses.length === 0
-      });
-
-      if (error) throw error;
       
-      addToast('New address added!', 'sweet');
       setShowAddrForm(false);
       resetAddrForm();
       await fetchAddresses(user.id);
@@ -153,6 +185,7 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
   };
 
   const resetAddrForm = () => {
+    setEditingAddressId(null);
     setAddrLabel('Home');
     setDoorNo('');
     setStreet('');
@@ -208,8 +241,8 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}>
             <FloatingCard className="!p-8 bg-brand/5 border-2 border-brand/10">
               <div className="flex justify-between items-center mb-6">
-                <p className="text-xs font-black uppercase tracking-widest text-brand">New Delivery Point</p>
-                <button onClick={() => setShowAddrForm(false)} className="text-brand-dark/40 hover:text-brand transition-colors"><Trash2 size={20}/></button>
+                <p className="text-xs font-black uppercase tracking-widest text-brand">{editingAddressId ? 'Edit Delivery Point' : 'New Delivery Point'}</p>
+                <button onClick={() => { setShowAddrForm(false); resetAddrForm(); }} className="text-brand-dark/40 hover:text-brand transition-colors"><Trash2 size={20}/></button>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -265,9 +298,9 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
               </div>
 
               <div className="mt-8 flex gap-4">
-                <Button3D variant="outline" className="flex-1 !h-12 text-[10px]" onClick={() => setShowAddrForm(false)}>Cancel</Button3D>
+                <Button3D variant="outline" className="flex-1 !h-12 text-[10px]" onClick={() => { setShowAddrForm(false); resetAddrForm(); }}>Cancel</Button3D>
                 <Button3D className="flex-[2] !h-12 text-[10px]" onClick={handleSaveAddress} disabled={loading}>
-                  {loading ? <RefreshCw className="animate-spin" size={16} /> : 'Save Address'}
+                  {loading ? <RefreshCw className="animate-spin" size={16} /> : (editingAddressId ? 'Update Address' : 'Save Address')}
                 </Button3D>
               </div>
             </FloatingCard>
@@ -291,6 +324,7 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
                 {addr.label === 'Home' ? <Home size={20}/> : addr.label === 'Office' ? <Briefcase size={20}/> : <Bookmark size={20}/>}
               </div>
               <div className="flex gap-2">
+                 <button onClick={(e) => handleEditClick(addr, e)} className="p-2 text-brand-dark/20 hover:text-brand transition-colors" title="Edit"><Edit size={18}/></button>
                  {!addr.is_default && (
                    <button onClick={(e) => setDefaultAddress(addr.id, e)} className="p-2 text-brand-dark/20 hover:text-green-500 transition-colors" title="Set Default"><Check size={18}/></button>
                  )}
