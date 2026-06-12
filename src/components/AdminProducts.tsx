@@ -463,6 +463,7 @@ export const AdminProducts = () => {
 
   const totalLive = products.filter(p => p.active).length;
   const categoryLive = filteredProducts.filter(p => p.active).length;
+  const selectedCategoryObj = categories.find(c => c.name === categoryFilter);
 
   return (
     <div className="space-y-10 pb-20">
@@ -532,12 +533,25 @@ export const AdminProducts = () => {
           </div>
 
           {categoryFilter !== 'All' && (
-            <button 
-              onClick={deleteCategory}
-              className="flex items-center gap-2 text-[9px] font-black text-red-400 hover:text-red-600 uppercase tracking-widest transition-colors px-4 py-2 rounded-xl bg-red-50/50 hover:bg-red-50 border border-red-100/50"
-            >
-              <Trash2 size={14} /> Delete Entire Category
-            </button>
+            <div className="flex flex-wrap items-center gap-2.5">
+              {selectedCategoryObj && (
+                <button 
+                  onClick={() => {
+                    startEditCategory(selectedCategoryObj);
+                    setShowCategoryModal(true);
+                  }}
+                  className="flex items-center gap-2 text-[9px] font-black text-brand hover:text-brand-dark uppercase tracking-widest transition-colors px-4 py-2 rounded-xl bg-brand/5 hover:bg-brand/10 border border-brand/10 shadow-sm"
+                >
+                  <Edit3 size={14} /> Edit Category Details
+                </button>
+              )}
+              <button 
+                onClick={deleteCategory}
+                className="flex items-center gap-2 text-[9px] font-black text-red-400 hover:text-red-600 uppercase tracking-widest transition-colors px-4 py-2 rounded-xl bg-red-50/50 hover:bg-red-50 border border-red-100/50"
+              >
+                <Trash2 size={14} /> Delete Entire Category
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -828,7 +842,10 @@ export const AdminProducts = () => {
                           return (
                             <div key={parentCat.id} className="space-y-2 group/branch">
                               {/* Parent Category Card */}
-                              <div className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all ${editingCategoryId === parentCat.id ? 'bg-brand/5 border-brand/20 shadow-soft' : 'bg-white/80 border-white hover:border-brand/10 hover:shadow-soft'}`}>
+                              <div 
+                                onClick={() => startEditCategory(parentCat)}
+                                className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer ${editingCategoryId === parentCat.id ? 'bg-brand/5 border-brand/20 shadow-soft' : 'bg-white/80 border-white hover:border-brand/10 hover:bg-brand/5 hover:border-brand/20 hover:shadow-soft'}`}
+                              >
                                  <div className="flex items-center gap-3 min-w-0">
                                     <div className="w-10 h-10 rounded-xl bg-white border border-brand/5 flex items-center justify-center overflow-hidden shadow-inner shrink-0">
                                       {parentCat.image_url ? (
@@ -856,7 +873,10 @@ export const AdminProducts = () => {
                                  </div>
                                  
                                  {/* Toolbar */}
-                                 <div className="flex items-center gap-1 shrink-0 bg-white/90 p-1 rounded-xl border border-brand/5 shadow-sm opacity-60 group-hover/branch:opacity-100 transition-opacity">
+                                 <div 
+                                   onClick={(e) => e.stopPropagation()}
+                                   className="flex items-center gap-1 shrink-0 bg-white/90 p-1 rounded-xl border border-brand/5 shadow-sm opacity-60 group-hover/branch:opacity-100 transition-opacity"
+                                 >
                                     <button 
                                       onClick={() => handleMoveCategory(parentCat.id, 'up')} 
                                       disabled={isFirstParent}
@@ -880,14 +900,18 @@ export const AdminProducts = () => {
                               </div>
 
                               {/* Sub-categories */}
-                              {subCats.length > 0 ? (
+                             {subCats.length > 0 ? (
                                 <div className="pl-6 border-l-2 border-dashed border-brand/15 ml-5 py-1 space-y-2">
                                   {subCats.map(subCat => {
                                     const subCount = getCategoryProductCount(subCat.name);
                                     const isFirstSub = subCats[0]?.id === subCat.id;
                                     const isLastSub = subCats[subCats.length - 1]?.id === subCat.id;
                                     return (
-                                      <div key={subCat.id} className={`flex items-center justify-between p-2.5 rounded-xl border transition-all relative group/sub ${editingCategoryId === subCat.id ? 'bg-brand/5 border-brand/20 shadow-soft' : 'bg-white/55 border-white hover:border-brand/10 hover:shadow-soft'}`}>
+                                      <div 
+                                        key={subCat.id} 
+                                        onClick={() => startEditCategory(subCat)}
+                                        className={`flex items-center justify-between p-2.5 rounded-xl border transition-all relative group/sub cursor-pointer ${editingCategoryId === subCat.id ? 'bg-brand/5 border-brand/20 shadow-soft' : 'bg-white/55 border-white hover:border-brand/5 hover:border-brand/20 hover:shadow-soft'}`}
+                                      >
                                          {/* Connection connector mark */}
                                          <span className="absolute -left-[16px] top-1/2 -translate-y-1/2 text-brand/25 font-bold text-sm">↳</span>
                                          
@@ -913,7 +937,10 @@ export const AdminProducts = () => {
                                          </div>
                                          
                                          {/* Sub Toolbar */}
-                                         <div className="flex items-center gap-0.5 shrink-0 bg-white/95 p-0.5 rounded-lg border border-brand/5 shadow-sm opacity-40 group-hover/sub:opacity-100 transition-opacity">
+                                         <div 
+                                           onClick={(e) => e.stopPropagation()}
+                                           className="flex items-center gap-0.5 shrink-0 bg-white/95 p-0.5 rounded-lg border border-brand/5 shadow-sm opacity-40 group-hover/sub:opacity-100 transition-opacity"
+                                         >
                                             <button 
                                               onClick={() => handleMoveCategory(subCat.id, 'up')} 
                                               disabled={isFirstSub}
@@ -959,6 +986,18 @@ export const AdminProducts = () => {
                      </p>
                      
                      <div className="bg-white/40 border border-white rounded-[2rem] p-5 space-y-4 shadow-sm flex flex-col overflow-y-auto max-h-full pr-1 custom-scrollbar">
+                        {editingCategoryId && (
+                           <div className="bg-brand/10 border border-brand/20 rounded-2xl p-4 flex items-center justify-between text-xs font-bold text-brand shrink-0">
+                             <span>Editing: <strong className="underline font-black">{categories.find(c => c.id === editingCategoryId)?.name}</strong></span>
+                             <button 
+                               type="button"
+                               onClick={cancelEditCategory} 
+                               className="text-brand hover:underline font-black uppercase text-[10px] tracking-wider cursor-pointer"
+                             >
+                               Cancel Edit
+                             </button>
+                           </div>
+                         )}
                         {/* Live Preview Widget */}
                         <div className="space-y-1.5 text-left shrink-0">
                            <label className="text-[8px] font-black uppercase tracking-widest text-brand-dark/40 ml-2">Real-time Storefront Preview</label>
