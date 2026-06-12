@@ -691,7 +691,7 @@ export const Home = () => {
       </section>
 
       {/* Footer */}
-      <footer className="pt-10 pb-8 px-6 text-center bg-brand-dark text-white rounded-t-[32px] mt-10 relative z-10">
+      <footer className="pt-10 pb-28 sm:pb-12 px-6 text-center bg-brand-dark text-white rounded-t-[32px] mt-10 relative z-10">
         <div className="w-20 h-20 bg-white/10 backdrop-blur-xl rounded-[24px] flex items-center justify-center mx-auto mb-8 border border-white/10 shadow-deep overflow-hidden">
            {businessLogo ? <img src={businessLogo} className="w-full h-full object-cover opacity-80" alt="Footer Logo" /> : <div className="text-2xl">🍯</div>}
         </div>

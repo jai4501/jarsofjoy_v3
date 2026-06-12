@@ -176,8 +176,8 @@ export const Favorites = () => {
                           const productItems = items.filter(i => i.id === product.id || i.id.startsWith(`${product.id}-`));
                           const totalQty = productItems.reduce((sum, i) => sum + i.quantity, 0);
                           const hasVariations = product.variations && (product.variations as any).length > 0;
-
-                          if (totalQty > 0) {
+                          
+                          if (totalQty > 0 && !hasVariations) {
                             return (
                               <div className="flex items-center gap-2.5 bg-brand/5 border border-brand/10 rounded-full p-1 h-10 shadow-sm" onClick={e => e.stopPropagation()}>
                                 <button 
@@ -198,17 +198,24 @@ export const Favorites = () => {
                           }
 
                           return (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (hasVariations) openQuickView(product);
-                                else handleAddToCart(product);
-                              }}
-                              disabled={product.stock_status === 'Out of Stock'}
-                              className="h-10 sm:h-12 px-5 sm:px-6 bg-brand hover:bg-brand/90 disabled:opacity-50 text-white rounded-full text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all cursor-pointer"
-                            >
-                              {product.stock_status === 'Out of Stock' ? 'Sold Out' : (hasVariations ? 'Options' : 'Add to jar')}
-                            </button>
+                            <div className="relative">
+                              {totalQty > 0 && (
+                                <div className="absolute -top-1.5 -right-1.5 bg-brand text-white text-[8px] font-black w-5 h-5 rounded-full flex items-center justify-center z-10 border-2 border-white shadow-sm">
+                                  {totalQty}
+                                </div>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (hasVariations) openQuickView(product);
+                                  else handleAddToCart(product);
+                                }}
+                                disabled={product.stock_status === 'Out of Stock'}
+                                className="h-10 sm:h-12 px-5 sm:px-6 bg-brand hover:bg-brand/90 disabled:opacity-50 text-white rounded-full text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all cursor-pointer"
+                              >
+                                {product.stock_status === 'Out of Stock' ? 'Sold Out' : (hasVariations ? 'Options' : 'Add to jar')}
+                              </button>
+                            </div>
                           );
                         })()}
                       </div>
