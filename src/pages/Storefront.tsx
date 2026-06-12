@@ -211,23 +211,23 @@ export const Storefront = () => {
                 transition={{ delay: idx * 0.05 }}
               >
                 <Link to={`/menu/${encodeURIComponent(cat.name)}`}>
-                  <div className="premium-card p-10 sm:p-16 flex items-center justify-between group relative overflow-hidden h-full min-h-[300px]">
+                  <div className="premium-card p-6 sm:p-8 flex items-center justify-between group relative overflow-hidden h-full min-h-[180px]">
                     <div className="absolute top-[-40px] right-[-40px] w-64 h-64 bg-brand/5 rounded-full group-hover:scale-150 transition-transform duration-1000 group-hover:bg-brand/10 pointer-events-none" />
                     
-                    <div className="flex flex-col sm:flex-row items-center gap-8 sm:gap-12 relative z-10 text-center sm:text-left">
-                      <div className="w-24 h-24 sm:w-32 sm:h-32 bg-blush rounded-[2.5rem] sm:rounded-[3.5rem] flex items-center justify-center overflow-hidden shadow-inner border-4 border-white group-hover:scale-110 transition-transform group-hover:rotate-3 animate-in fade-in duration-500">
+                    <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 relative z-10 text-center sm:text-left">
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blush rounded-[1.5rem] sm:rounded-[2rem] flex items-center justify-center overflow-hidden shadow-inner border-2 border-white group-hover:scale-110 transition-transform group-hover:rotate-3 animate-in fade-in duration-500">
                         {(cat as any).image_url ? (
                           <img src={(cat as any).image_url} className="w-full h-full object-cover" alt={cat.name} />
                         ) : (
-                          <span className="text-6xl sm:text-7xl">{cat.emoji || getCategoryIcon(cat.name)}</span>
+                          <span className="text-4xl sm:text-5xl">{cat.emoji || getCategoryIcon(cat.name)}</span>
                         )}
                       </div>
                       <div>
-                        <p className="text-[10px] sm:text-[12px] font-black uppercase tracking-[0.3em] text-brand mb-2">
+                        <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] text-brand mb-1">
                            Curated Selection <span className="mx-2 text-brand/20">•</span> {categoryCounts[cat.name] || 0} items
                         </p>
-                        <h3 className="heading-serif text-4xl sm:text-6xl text-brand-dark group-hover:text-brand transition-colors leading-none">{cat.name}</h3>
-                        <p className="text-brand-dark/65 text-xs sm:text-sm font-medium mt-4 group-hover:text-brand-dark/85 transition-colors">Explore our premium handcrafted {cat.name.toLowerCase()} range.</p>
+                        <h3 className="heading-serif text-2xl sm:text-4xl text-brand-dark group-hover:text-brand transition-colors leading-none">{cat.name}</h3>
+                        <p className="text-brand-dark/65 text-[10px] sm:text-xs font-medium mt-2 group-hover:text-brand-dark/85 transition-colors">Explore our premium handcrafted {cat.name.toLowerCase()} range.</p>
                       </div>
                     </div>
                     
@@ -241,17 +241,17 @@ export const Storefront = () => {
           </div>
         ) : (
           /* PRODUCT LIST MODE (Professional Desktop) */
-          <div className="space-y-20 max-w-7xl mx-auto">
-            <div className="max-w-3xl mx-auto relative group mb-12">
-              <div className="absolute inset-y-0 left-8 flex items-center pointer-events-none text-brand/30 group-focus-within:text-brand transition-colors">
-                <Sparkles size={24} />
+          <div className="space-y-12 max-w-7xl mx-auto">
+            <div className="max-w-2xl mx-auto relative group mb-8">
+              <div className="absolute inset-y-0 left-6 flex items-center pointer-events-none text-brand/30 group-focus-within:text-brand transition-colors">
+                <Sparkles size={18} />
               </div>
               <input 
                 type="text" 
                 placeholder={`Search in our ${categoryName} collection...`}
                 value={searchQuery}
                 onChange={(e) => setSearchBar(e.target.value)}
-                className="w-full h-20 pl-20 pr-8 bg-white/85 backdrop-blur-sm rounded-[2.5rem] border-2 border-brand/5 shadow-soft outline-none focus:border-brand/40 focus:bg-white transition-all font-bold text-lg text-brand-dark placeholder-brand-dark/55"
+                className="w-full h-14 pl-14 pr-6 bg-white/85 backdrop-blur-sm rounded-[1.5rem] border-2 border-brand/5 shadow-soft outline-none focus:border-brand/40 focus:bg-white transition-all font-bold text-sm text-brand-dark placeholder-brand-dark/55"
               />
             </div>
 
@@ -302,8 +302,8 @@ export const Storefront = () => {
                     onClick={() => openQuickView(product)}
                     className="cursor-pointer"
                   >
-                    <div className="premium-card h-full p-5 sm:p-10 group flex flex-col relative text-center hover:-translate-y-1 transition-all duration-500">
-                      <div className="relative aspect-square sm:aspect-[4/5] bg-brand/5 rounded-[2.5rem] sm:rounded-[4rem] mb-6 sm:mb-12 overflow-hidden shadow-inner">
+                    <div className="premium-card h-full p-4 sm:p-6 group flex flex-col relative text-center hover:-translate-y-1 transition-all duration-500">
+                      <div className="relative aspect-square sm:aspect-[4/5] bg-brand/5 rounded-[1.5rem] sm:rounded-[2.5rem] mb-4 sm:mb-6 overflow-hidden shadow-inner">
                         {product.images && product.images[0] ? (
                           <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
                         ) : (
@@ -322,35 +322,35 @@ export const Storefront = () => {
                             e.stopPropagation();
                             toggleFavorite(product.id);
                           }}
-                          className={`absolute top-4 right-4 sm:top-8 sm:right-8 h-10 w-10 sm:h-14 sm:w-14 bg-white/90 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-luxury z-20 transition-all duration-300 hover:scale-110 ${favorites.includes(product.id) ? 'opacity-100 text-red-500' : 'text-brand opacity-100 sm:opacity-0 group-hover:opacity-100'}`}
+                          className={`absolute top-3 right-3 sm:top-5 sm:right-5 h-8 w-8 sm:h-10 sm:w-10 bg-white/90 backdrop-blur-md rounded-xl flex items-center justify-center shadow-luxury z-20 transition-all duration-300 hover:scale-110 ${favorites.includes(product.id) ? 'opacity-100 text-red-500' : 'text-brand opacity-100 sm:opacity-0 group-hover:opacity-100'}`}
                           title={favorites.includes(product.id) ? "Remove from Favorites" : "Add to Favorites"}
                         >
-                           <Heart size={18} className={`sm:size-7 transition-all ${favorites.includes(product.id) ? 'fill-red-500' : 'group-hover:fill-brand'}`} />
+                           <Heart size={14} className={`sm:size-5 transition-all ${favorites.includes(product.id) ? 'fill-red-500' : 'group-hover:fill-brand'}`} />
                         </button>
                       </div>
                       
-                      <div className="px-2 sm:px-6 pb-2 sm:pb-6 flex-grow flex flex-col items-center">
-                        <h3 className="text-xl sm:text-5xl font-black mb-3 sm:mb-6 text-brand-dark tracking-tight group-hover:text-brand transition-colors heading-serif leading-tight">{product.name}</h3>
+                      <div className="px-1 sm:px-3 pb-1 sm:pb-3 flex-grow flex flex-col items-center">
+                        <h3 className="text-lg sm:text-2xl font-black mb-2 sm:mb-4 text-brand-dark tracking-tight group-hover:text-brand transition-colors heading-serif leading-tight">{product.name}</h3>
                         
-                        <div className="flex flex-wrap justify-center gap-2 mb-6 sm:mb-10 min-h-[20px]">
+                        <div className="flex flex-wrap justify-center gap-1.5 mb-4 sm:mb-6 min-h-[20px]">
                           {product.variations && (product.variations as any).length > 0 && (
-                            <span className="px-3 py-1.5 bg-brand text-[8px] sm:text-[10px] font-black uppercase tracking-widest text-white rounded-xl shadow-sm">
+                            <span className="px-2.5 py-1 bg-brand text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-white rounded-lg shadow-sm">
                               {(product.variations as any).length} Sizes Available
                             </span>
                           )}
                           {product.tags?.slice(0, 2).map(tag => (
-                            <span key={tag} className="px-3 py-1.5 bg-brand/5 text-[8px] sm:text-[10px] font-black uppercase tracking-widest text-brand rounded-xl border border-brand/10 shadow-inner">
+                            <span key={tag} className="px-2.5 py-1 bg-brand/5 text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-brand rounded-lg border border-brand/10 shadow-inner">
                               {tag}
                             </span>
                           ))}
                         </div>
 
-                        <p className="text-brand-dark/75 text-xs sm:text-lg mb-8 sm:mb-12 line-clamp-2 leading-relaxed font-medium hidden sm:block h-14 overflow-hidden italic text-center">
+                        <p className="text-brand-dark/75 text-[10px] sm:text-sm mb-4 sm:mb-6 line-clamp-2 leading-relaxed font-medium hidden sm:block h-12 overflow-hidden italic text-center">
                           {product.description || "Indulge in this handcrafted masterpiece made with passion."}
                         </p>
                         
-                        <div className="mt-auto w-full flex flex-col items-center gap-6 sm:gap-8 pt-6 sm:pt-12 border-t border-brand/5">
-                          <span className="text-3xl sm:text-6xl font-black text-brand tracking-tighter">₹{product.price}</span>
+                        <div className="mt-auto w-full flex flex-col items-center gap-3 sm:gap-4 pt-4 sm:pt-6 border-t border-brand/5">
+                          <span className="text-xl sm:text-3xl font-black text-brand tracking-tighter">₹{product.price}</span>
                           
                           {(() => {
                             const productItems = items.filter(i => i.id === product.id || i.id.startsWith(`${product.id}-`));
@@ -359,21 +359,21 @@ export const Storefront = () => {
 
                             if (totalQty > 0 && !hasVariations) {
                               return (
-                                <div className="flex items-center gap-4 bg-brand/5 rounded-full p-2 border border-brand/10 h-14 sm:h-20 w-full max-w-[240px] justify-between shadow-inner">
+                                <div className="flex items-center gap-3 bg-brand/5 rounded-full p-1.5 border border-brand/10 h-11 sm:h-14 w-full max-w-[200px] justify-between shadow-inner">
                                   <button 
                                     onClick={(e) => { e.stopPropagation(); updateQuantity(product.id, -1); }}
-                                    className="w-10 h-10 sm:w-16 sm:h-16 bg-white rounded-full flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all shadow-luxury"
+                                    className="w-8 h-8 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all shadow-luxury"
                                   >
-                                    <Minus size={24} />
+                                    <Minus size={16} />
                                   </button>
-                                  <span className="font-black text-brand text-xl sm:text-3xl px-2">
+                                  <span className="font-black text-brand text-sm sm:text-lg px-2">
                                     {totalQty}
                                   </span>
                                   <button 
                                     onClick={(e) => { e.stopPropagation(); updateQuantity(product.id, 1); }}
-                                    className="w-10 h-10 sm:w-16 sm:h-16 bg-white rounded-full flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all shadow-luxury"
+                                    className="w-8 h-8 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all shadow-luxury"
                                   >
-                                    <Plus size={24} />
+                                    <Plus size={16} />
                                   </button>
                                 </div>
                               );
@@ -382,7 +382,7 @@ export const Storefront = () => {
                             return (
                               <div className="relative w-full">
                                 {totalQty > 0 && (
-                                  <div className="absolute -top-3 -right-3 bg-brand text-white text-xs font-black w-8 h-8 rounded-full flex items-center justify-center shadow-luxury z-10 animate-in zoom-in duration-500 border-2 border-white">
+                                  <div className="absolute -top-2 -right-2 bg-brand text-white text-[9px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-luxury z-10 animate-in zoom-in duration-500 border-2 border-white">
                                     {totalQty}
                                   </div>
                                 )}
@@ -393,7 +393,7 @@ export const Storefront = () => {
                                     if (hasVariations) openQuickView(product);
                                     else handleAddToCart(product);
                                   }}
-                                  className={`h-14 sm:h-20 w-full !py-0 px-8 text-xs sm:text-base uppercase tracking-[0.25em] font-black rounded-full ${product.stock_status === 'Out of Stock' ? 'opacity-50 grayscale pointer-events-none' : ''}`}
+                                  className={`h-11 sm:h-14 w-full !py-0 px-6 text-xs sm:text-sm uppercase tracking-[0.25em] font-black rounded-full ${product.stock_status === 'Out of Stock' ? 'opacity-50 grayscale pointer-events-none' : ''}`}
                                 >
                                   {product.stock_status === 'Out of Stock' ? 'Unavailable' : (hasVariations ? 'Explore Sizes' : 'Add to jar')}
                                 </Button3D>

@@ -112,7 +112,7 @@ export const Favorites = () => {
           </motion.div>
         ) : (
           /* Product Grid */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-10">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {favoriteProducts.map((product) => {
               const isFav = favorites.includes(product.id);
               return (
@@ -120,7 +120,7 @@ export const Favorites = () => {
                   layout
                   key={product.id}
                   onClick={() => openQuickView(product)}
-                  className="bg-white rounded-[2rem] border border-brand/5 overflow-hidden group shadow-soft hover:shadow-luxury hover:-translate-y-1 transition-all duration-500 cursor-pointer flex flex-col h-full relative"
+                  className="bg-white rounded-[1.5rem] border border-brand/5 overflow-hidden group shadow-soft hover:shadow-luxury hover:-translate-y-1 transition-all duration-500 cursor-pointer flex flex-col h-full relative"
                 >
                   {/* Floating Heart Button */}
                   <button
@@ -128,17 +128,17 @@ export const Favorites = () => {
                       e.stopPropagation();
                       toggleFavorite(product.id);
                     }}
-                    className="absolute top-4 right-4 z-20 w-10 h-10 rounded-full bg-white/80 backdrop-blur-md border border-brand/10 flex items-center justify-center hover:scale-110 active:scale-90 transition-all shadow-sm group-favorite-button"
+                    className="absolute top-3 right-3 z-20 w-8 h-8 rounded-full bg-white/80 backdrop-blur-md border border-brand/10 flex items-center justify-center hover:scale-110 active:scale-90 transition-all shadow-sm group-favorite-button"
                     title={isFav ? "Remove from Favorites" : "Add to Favorites"}
                   >
                     <Heart 
-                      size={18} 
+                      size={14} 
                       className={`transition-colors ${isFav ? 'fill-red-500 stroke-red-500 text-red-500' : 'text-brand'}`} 
                     />
                   </button>
 
                   {/* Product Image */}
-                  <div className="h-60 sm:h-72 bg-brand/5 overflow-hidden relative">
+                  <div className="h-40 sm:h-56 bg-brand/5 overflow-hidden relative">
                     {product.images && product.images[0] ? (
                       <img 
                         src={product.images[0]} 
@@ -146,28 +146,28 @@ export const Favorites = () => {
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" 
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-7xl opacity-10">🍰</div>
+                      <div className="w-full h-full flex items-center justify-center text-5xl opacity-10">🍰</div>
                     )}
                     {product.stock_status === 'Out of Stock' && (
                       <div className="absolute inset-0 bg-brand-dark/40 backdrop-blur-xs flex items-center justify-center">
-                        <span className="bg-white text-brand font-black text-[10px] sm:text-xs uppercase tracking-widest px-4 py-2 rounded-full shadow-md">Sold Out</span>
+                        <span className="bg-white text-brand font-black text-[9px] sm:text-xs uppercase tracking-widest px-3 py-1.5 rounded-xl shadow-md">Sold Out</span>
                       </div>
                     )}
                   </div>
 
                   {/* Product Details */}
-                  <div className="p-6 sm:p-8 flex flex-col flex-1 bg-white">
-                    <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] sm:text-[9px] mb-2 opacity-60">{product.category}</p>
-                    <h3 className="text-xl font-black mb-3 text-brand-dark tracking-tight group-hover:text-brand transition-colors heading-serif leading-tight">
+                  <div className="p-4 sm:p-5 flex flex-col flex-1 bg-white">
+                    <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] mb-1 opacity-60">{product.category}</p>
+                    <h3 className="text-sm sm:text-base font-black mb-2 text-brand-dark tracking-tight group-hover:text-brand transition-colors heading-serif leading-tight">
                       {product.name}
                     </h3>
-                    <p className="text-xs font-semibold text-brand-dark/50 line-clamp-2 leading-relaxed mb-6">
+                    <p className="text-[10px] font-semibold text-brand-dark/50 line-clamp-2 leading-relaxed mb-4">
                       {product.description || "Indulge in this handcrafted masterpiece made with passion."}
                     </p>
 
                     {/* Bottom row: price and add button */}
-                    <div className="flex items-center justify-between mt-auto pt-4 border-t border-brand/5">
-                      <span className="text-2xl font-black text-brand tracking-tighter">₹{product.price}</span>
+                    <div className="flex items-center justify-between mt-auto pt-3 border-t border-brand/5">
+                      <span className="text-lg sm:text-xl font-black text-brand tracking-tighter">₹{product.price}</span>
                       
                       {/* Add Button */}
                       <div>
