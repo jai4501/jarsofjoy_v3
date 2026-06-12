@@ -205,7 +205,7 @@ export const Favorites = () => {
                                 else handleAddToCart(product);
                               }}
                               disabled={product.stock_status === 'Out of Stock'}
-                              className="h-10 px-5 bg-brand hover:bg-brand/90 disabled:opacity-50 text-white rounded-full text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer"
+                              className="h-10 sm:h-12 px-5 sm:px-6 bg-brand hover:bg-brand/90 disabled:opacity-50 text-white rounded-full text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all cursor-pointer"
                             >
                               {product.stock_status === 'Out of Stock' ? 'Sold Out' : (hasVariations ? 'Options' : 'Add to jar')}
                             </button>
@@ -388,7 +388,7 @@ export const Favorites = () => {
                         <Button3D 
                           onClick={() => handleAddToCart(selectedProduct)} 
                           disabled={selectedProduct.stock_status === 'Out of Stock'}
-                          className="w-full h-12 text-xs uppercase tracking-widest font-black"
+                          className="w-full h-12 sm:h-14 text-xs sm:text-sm uppercase tracking-widest font-black"
                         >
                           Add to Jar <ShoppingCart className="ml-2" size={14} />
                         </Button3D>

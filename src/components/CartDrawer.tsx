@@ -867,7 +867,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                       }
                       setStep('checkout');
                     }}
-                    className="w-full h-14 text-xs font-black uppercase tracking-widest rounded-full shadow-luxury"
+                    className="w-full h-14 sm:h-16 text-xs sm:text-sm font-black uppercase tracking-widest rounded-full shadow-luxury"
                   >
                     Checkout Now
                   </Button3D>
@@ -875,7 +875,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                   <Button3D 
                     onClick={handlePlaceOrder}
                     disabled={submitting}
-                    className="w-full h-14 text-xs font-black uppercase tracking-widest rounded-full shadow-luxury flex items-center justify-center gap-2"
+                    className="w-full h-14 sm:h-16 text-xs sm:text-sm font-black uppercase tracking-widest rounded-full shadow-luxury flex items-center justify-center gap-2"
                   >
                     {submitting ? 'Placing Order...' : 'Confirm Order & Pay'}
                   </Button3D>

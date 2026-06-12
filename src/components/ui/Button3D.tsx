@@ -25,7 +25,7 @@ export const Button3D = ({ children, onClick, className = '', variant = 'primary
       whileTap={disabled ? {} : { scale: 0.98 }}
       onClick={onClick}
       disabled={disabled}
-      className={`px-8 py-4 rounded-button font-bold tracking-wide transition-all duration-200 ${variants[variant]} ${className}`}
+      className={`px-8 py-4 sm:px-10 sm:py-5 rounded-button font-bold tracking-wide transition-all duration-200 ${variants[variant]} ${className}`}
     >
       <span className="relative z-10 flex items-center justify-center gap-2">{children}</span>
     </motion.button>

@@ -356,7 +356,7 @@ export const Home = () => {
                   if (hasVariations) openQuickView(product);
                   else handleAddToCart(product);
                 }}
-                className="w-full h-10 text-[9px] uppercase tracking-widest font-black rounded-full"
+                className="w-full h-10 sm:h-12 text-[9px] sm:text-xs uppercase tracking-widest font-black rounded-full"
                 disabled={product.stock_status === 'Out of Stock'}
               >
                 {product.stock_status === 'Out of Stock' ? 'Sold Out' : (hasVariations ? 'Options' : 'Add to jar')}
@@ -442,12 +442,12 @@ export const Home = () => {
               {/* Desktop Only Primary Button */}
               <div className="hidden md:flex gap-4 w-full pt-4">
                 <Link to="/menu" className="w-auto">
-                  <Button3D variant="flat" className="h-14 px-12 text-xs font-black uppercase tracking-[0.2em] rounded-full flex items-center gap-2 shadow-luxury bg-brand hover:bg-brand-dark text-white">
+                  <Button3D variant="flat" className="h-14 sm:h-16 px-12 sm:px-14 text-xs sm:text-sm font-black uppercase tracking-[0.2em] rounded-full flex items-center gap-2 shadow-luxury bg-brand hover:bg-brand-dark text-white">
                      ORDER NOW <ShoppingCart size={16} />
                   </Button3D>
                 </Link>
                 <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="w-auto">
-                  <Button3D variant="outline" className="h-14 px-10 text-xs font-black uppercase tracking-[0.2em] rounded-full bg-white/50 backdrop-blur-sm border-white/50 text-brand">
+                  <Button3D variant="outline" className="h-14 sm:h-16 px-10 sm:px-12 text-xs sm:text-sm font-black uppercase tracking-[0.2em] rounded-full bg-white/50 backdrop-blur-sm border-white/50 text-brand">
                     Chat on WhatsApp
                   </Button3D>
                 </a>
@@ -572,7 +572,7 @@ export const Home = () => {
               <Link to="/menu">
                 <Button3D 
                   variant="outline" 
-                  className="h-14 px-12 bg-white/60 backdrop-blur-sm border-brand/10 hover:border-brand/30 text-brand text-xs font-black uppercase tracking-[0.25em] rounded-full shadow-soft"
+                  className="h-14 sm:h-16 px-12 sm:px-14 bg-white/60 backdrop-blur-sm border-brand/10 hover:border-brand/30 text-brand text-xs sm:text-sm font-black uppercase tracking-[0.25em] rounded-full shadow-soft"
                 >
                   VIEW FULL MENU <ChevronRight size={16} className="ml-1" />
                 </Button3D>
@@ -634,7 +634,7 @@ export const Home = () => {
                       <Link to={`/menu/${encodeURIComponent(cat.name)}`}>
                         <Button3D 
                           variant="outline" 
-                          className="h-12 px-8 text-xs font-black uppercase tracking-widest rounded-full bg-white border-brand/20 hover:border-brand shadow-sm flex items-center gap-2"
+                          className="h-12 sm:h-14 px-8 sm:px-10 text-xs sm:text-sm font-black uppercase tracking-widest rounded-full bg-white border-brand/20 hover:border-brand shadow-sm flex items-center gap-2"
                         >
                           Explore Collection <ChevronRight size={14} />
                         </Button3D>
@@ -885,7 +885,7 @@ export const Home = () => {
                         <Button3D 
                           onClick={() => handleAddToCart(selectedProduct)} 
                           disabled={selectedProduct.stock_status === 'Out of Stock'}
-                          className="w-full h-12 text-xs uppercase tracking-widest font-black"
+                          className="w-full h-12 sm:h-14 text-xs sm:text-sm uppercase tracking-widest font-black"
                         >
                           Add to Jar <ShoppingCart className="ml-2" size={14} />
                         </Button3D>

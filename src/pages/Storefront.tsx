@@ -170,7 +170,7 @@ export const Storefront = () => {
               <Link to="/menu">
                 <Button3D 
                   variant="secondary" 
-                  className="h-14 px-8 text-xs font-black uppercase tracking-widest"
+                  className="h-14 sm:h-16 px-8 sm:px-10 text-xs sm:text-sm font-black uppercase tracking-widest"
                 >
                   <ArrowLeft size={18} className="mr-2" /> All Categories
                 </Button3D>
@@ -182,7 +182,7 @@ export const Storefront = () => {
                   addToast('Preparing your visual menu...', 'sweet');
                   await generateMenuPDF(products as any, { business_logo: businessLogo, business_name: businessName });
                 }}
-                className="h-14 px-10 bg-white/50 backdrop-blur-sm text-xs font-black uppercase tracking-widest border border-white/40"
+                className="h-14 sm:h-16 px-10 sm:px-12 bg-white/50 backdrop-blur-sm text-xs sm:text-sm font-black uppercase tracking-widest border border-white/40"
               >
                 <FileDown size={18} className="mr-2" /> Full Menu PDF
               </Button3D>
@@ -289,7 +289,7 @@ export const Storefront = () => {
               <div className="text-center py-48 premium-card max-w-2xl mx-auto bg-white/40">
                 <div className="text-6xl mb-6 opacity-20">🍰</div>
                 <p className="heading-serif text-4xl text-brand-dark/60 mb-8 tracking-tight">No treats found!</p>
-                <Button3D variant="outline" onClick={() => setSearchBar('')} className="px-12 h-14 text-xs uppercase font-black tracking-widest">Clear Collection Filter</Button3D>
+                <Button3D variant="outline" onClick={() => setSearchBar('')} className="px-12 sm:px-14 h-14 sm:h-16 text-xs sm:text-sm uppercase font-black tracking-widest">Clear Collection Filter</Button3D>
               </div>
             ) : (
               <motion.div layout className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 sm:gap-10 max-w-[1200px] mx-auto">
@@ -393,7 +393,7 @@ export const Storefront = () => {
                                     if (hasVariations) openQuickView(product);
                                     else handleAddToCart(product);
                                   }}
-                                  className={`h-11 sm:h-14 w-full !py-0 px-6 text-xs sm:text-sm uppercase tracking-[0.25em] font-black rounded-full ${product.stock_status === 'Out of Stock' ? 'opacity-50 grayscale pointer-events-none' : ''}`}
+                                  className={`h-11 sm:h-16 w-full !py-0 px-6 text-xs sm:text-[15px] uppercase tracking-[0.25em] font-black rounded-full ${product.stock_status === 'Out of Stock' ? 'opacity-50 grayscale pointer-events-none' : ''}`}
                                 >
                                   {product.stock_status === 'Out of Stock' ? 'Unavailable' : (hasVariations ? 'Explore Sizes' : 'Add to jar')}
                                 </Button3D>
@@ -578,7 +578,7 @@ export const Storefront = () => {
                         <Button3D 
                           onClick={() => handleAddToCart(selectedProduct)} 
                           disabled={selectedProduct.stock_status === 'Out of Stock'}
-                          className="w-full h-12 text-xs uppercase tracking-widest font-black"
+                          className="w-full h-12 sm:h-14 text-xs sm:text-sm uppercase tracking-widest font-black"
                         >
                           Add to Jar <ShoppingCart className="ml-2" size={14} />
                         </Button3D>
