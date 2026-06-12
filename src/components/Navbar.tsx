@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Home, Utensils, ShoppingBag, ShieldCheck, ShoppingCart, User } from 'lucide-react';
+import { Home, Utensils, ShoppingBag, ShieldCheck, ShoppingCart, User, Heart } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useCartStore } from '../store/useCartStore';
 import { useUserStore } from '../store/useUserStore';
@@ -37,6 +37,7 @@ export const Navbar = () => {
   const navItems = [
     { path: '/', icon: <Home size={20} />, label: 'Home' },
     { path: '/menu', icon: <Utensils size={20} />, label: 'Menu' },
+    { path: '/favorites', icon: <Heart size={20} />, label: 'Favorites' },
     { path: '/orders', icon: <ShoppingBag size={20} />, label: 'Orders' },
   ];
 

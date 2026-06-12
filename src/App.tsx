@@ -20,6 +20,7 @@ import { Orders } from './pages/Orders';
 import { Profile } from './pages/Profile';
 import { Login } from './pages/Login';
 import { Policies } from './pages/Policies';
+import { Favorites } from './pages/Favorites';
 import { AdminLayout } from './components/AdminLayout';
 import { LoadingScreen } from './components/ui/LoadingScreen';
 
@@ -86,6 +87,7 @@ function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/login" element={<Login />} />
           <Route path="/policies" element={<Policies />} />
+          <Route path="/favorites" element={<Favorites />} />
           
           {/* Protected Admin Routes */}
           <Route 

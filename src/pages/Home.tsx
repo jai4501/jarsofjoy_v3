@@ -12,6 +12,7 @@ import { useCartStore } from '../store/useCartStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useToastStore } from '../store/useToastStore';
 import { useProductStore } from '../store/useProductStore';
+import { useFavoritesStore } from '../store/useFavoritesStore';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -205,6 +206,7 @@ export const Home = () => {
   const mapKey = `map-${lat}-${lng}`;
 
   const { products, categories, fetchCatalog } = useProductStore();
+  const { favorites, toggleFavorite } = useFavoritesStore();
 
   const bestSellers = (() => {
     const bestSellerNames = ["Brownie", "Cookie", "Tres Leches", "Cake"];
@@ -311,9 +313,16 @@ export const Home = () => {
             </div>
           )}
           
-          <div className="absolute top-2 right-2 h-8 w-8 bg-white/90 backdrop-blur-sm rounded-xl flex items-center justify-center text-brand shadow-sm opacity-0 group-hover:opacity-100 transition-all duration-300">
-             <Heart size={16} className="group-hover:fill-brand transition-all" />
-          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFavorite(product.id);
+            }}
+            className={`absolute top-2 right-2 h-8 w-8 bg-white/90 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-sm z-20 transition-all duration-300 hover:scale-110 ${favorites.includes(product.id) ? 'opacity-100 text-red-500' : 'text-brand opacity-100 sm:opacity-0 group-hover:opacity-100'}`}
+            title={favorites.includes(product.id) ? "Remove from Favorites" : "Add to Favorites"}
+          >
+             <Heart size={16} className={`transition-all ${favorites.includes(product.id) ? 'fill-red-500' : 'group-hover:fill-brand'}`} />
+          </button>
         </div>
 
         <div className="flex-grow flex flex-col justify-between">
@@ -752,7 +761,19 @@ export const Home = () => {
               {/* Info Section */}
               <div className="w-full md:w-[50%] p-6 sm:p-8 flex flex-col bg-white">
                 <div className="mb-6">
-                  <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] sm:text-[9px] mb-2 opacity-60">{selectedProduct.category}</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] sm:text-[9px] mb-2 opacity-60">{selectedProduct.category}</p>
+                    <button
+                      onClick={() => toggleFavorite(selectedProduct.id)}
+                      className="w-8 h-8 rounded-full border border-brand/10 flex items-center justify-center hover:scale-105 transition-all shadow-sm mr-6"
+                      title={favorites.includes(selectedProduct.id) ? "Remove from Favorites" : "Add to Favorites"}
+                    >
+                      <Heart 
+                        size={14} 
+                        className={favorites.includes(selectedProduct.id) ? 'fill-red-500 stroke-red-500 text-red-500' : 'text-brand'} 
+                      />
+                    </button>
+                  </div>
                   <h3 className="text-2xl sm:text-3xl font-black text-brand-dark tracking-tight leading-none mb-3 heading-serif">{selectedProduct.name}</h3>
                   <div className="flex items-center gap-4">
                     <p className="text-2xl font-black text-brand">₹{selectedProduct.price}</p>

@@ -1,0 +1,402 @@
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Heart, X, Plus, Minus, Utensils, ShoppingCart } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useCartStore } from '../store/useCartStore';
+import { useProductStore } from '../store/useProductStore';
+import { useFavoritesStore } from '../store/useFavoritesStore';
+import { Navbar } from '../components/Navbar';
+import { ScrollToTopButton } from '../components/ui/ScrollToTopButton';
+import { CartDrawer } from '../components/CartDrawer';
+
+type Product = any;
+
+export const Favorites = () => {
+  const { products, isLoaded, fetchCatalog } = useProductStore();
+  const { favorites, toggleFavorite } = useFavoritesStore();
+  const { items, addItem, updateQuantity, isCartOpen, setIsCartOpen } = useCartStore();
+
+  // Load catalog on mount if not loaded
+  useEffect(() => {
+    if (!isLoaded) {
+      fetchCatalog();
+    }
+  }, [isLoaded, fetchCatalog]);
+
+  // Selected product state for Quick View
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [showProductModal, setShowProductModal] = useState(false);
+
+  // Disable page scroll when modal is active
+  useEffect(() => {
+    if (showProductModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showProductModal]);
+
+  const handleAddToCart = (product: Product, variation?: { name: string; price: number }) => {
+    if (product.stock_status === 'Out of Stock') {
+      return;
+    }
+
+    const hasVariations = product.variations && (product.variations as any).length > 0;
+    const itemToAdd = (hasVariations && variation) ? {
+      ...product,
+      id: `${product.id}-${variation.name}`,
+      name: `${product.name} (${variation.name})`,
+      price: variation.price
+    } : product;
+
+    addItem(itemToAdd);
+  };
+
+  const openQuickView = (product: Product) => {
+    setSelectedProduct(product);
+    setShowProductModal(true);
+  };
+
+  // Filter products by user favorites
+  const favoriteProducts = products.filter(p => favorites.includes(p.id) && p.active !== false);
+
+  return (
+    <>
+      <Navbar />
+      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
+
+      <section className="min-h-screen bg-cream/30 pt-24 sm:pt-32 pb-32 px-4 sm:px-8 max-w-7xl mx-auto w-full">
+        {/* Page Header */}
+        <div className="text-center mb-12 sm:mb-20">
+          <p className="text-brand font-black uppercase tracking-[0.4em] text-[10px] sm:text-xs mb-3 opacity-60">Your Curated Sweets</p>
+          <h2 className="heading-cursive text-5xl sm:text-7xl text-brand-dark mb-4">My Favorites</h2>
+          <div className="w-24 h-1 bg-brand/10 rounded-full mx-auto" />
+        </div>
+
+        {/* Favorites List */}
+        {!isLoaded ? (
+          <div className="flex justify-center items-center py-20">
+            <div className="w-10 h-10 border-4 border-brand/20 border-t-brand rounded-full animate-spin" />
+          </div>
+        ) : favoriteProducts.length === 0 ? (
+          /* Empty State */
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto space-y-6"
+          >
+            <div className="w-24 h-24 rounded-full bg-brand/5 border border-brand/10 flex items-center justify-center text-brand relative shadow-soft">
+              <Heart size={44} className="stroke-[1.5] animate-pulse" />
+              <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-brand text-white flex items-center justify-center text-[10px] font-black">
+                0
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="heading-serif text-2xl font-black text-brand-dark">No favorites yet</h3>
+              <p className="text-xs font-semibold text-brand-dark/55 leading-relaxed">
+                Start browsing our menu of fresh treats and tap the heart icon to save your favorites here!
+              </p>
+            </div>
+
+            <Link 
+              to="/menu"
+              className="inline-flex h-12 px-8 bg-brand text-white rounded-full text-xs font-black uppercase tracking-widest shadow-md hover:scale-[1.02] active:scale-95 transition-all items-center gap-2"
+            >
+              <Utensils size={14} />
+              View Menu
+            </Link>
+          </motion.div>
+        ) : (
+          /* Product Grid */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-10">
+            {favoriteProducts.map((product) => {
+              const isFav = favorites.includes(product.id);
+              return (
+                <motion.div 
+                  layout
+                  key={product.id}
+                  onClick={() => openQuickView(product)}
+                  className="bg-white rounded-[2rem] border border-brand/5 overflow-hidden group shadow-soft hover:shadow-luxury hover:-translate-y-1 transition-all duration-500 cursor-pointer flex flex-col h-full relative"
+                >
+                  {/* Floating Heart Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFavorite(product.id);
+                    }}
+                    className="absolute top-4 right-4 z-20 w-10 h-10 rounded-full bg-white/80 backdrop-blur-md border border-brand/10 flex items-center justify-center hover:scale-110 active:scale-90 transition-all shadow-sm group-favorite-button"
+                    title={isFav ? "Remove from Favorites" : "Add to Favorites"}
+                  >
+                    <Heart 
+                      size={18} 
+                      className={`transition-colors ${isFav ? 'fill-red-500 stroke-red-500 text-red-500' : 'text-brand'}`} 
+                    />
+                  </button>
+
+                  {/* Product Image */}
+                  <div className="h-60 sm:h-72 bg-brand/5 overflow-hidden relative">
+                    {product.images && product.images[0] ? (
+                      <img 
+                        src={product.images[0]} 
+                        alt={product.name} 
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" 
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-7xl opacity-10">🍰</div>
+                    )}
+                    {product.stock_status === 'Out of Stock' && (
+                      <div className="absolute inset-0 bg-brand-dark/40 backdrop-blur-xs flex items-center justify-center">
+                        <span className="bg-white text-brand font-black text-[10px] sm:text-xs uppercase tracking-widest px-4 py-2 rounded-full shadow-md">Sold Out</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Product Details */}
+                  <div className="p-6 sm:p-8 flex flex-col flex-1 bg-white">
+                    <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] sm:text-[9px] mb-2 opacity-60">{product.category}</p>
+                    <h3 className="text-xl font-black mb-3 text-brand-dark tracking-tight group-hover:text-brand transition-colors heading-serif leading-tight">
+                      {product.name}
+                    </h3>
+                    <p className="text-xs font-semibold text-brand-dark/50 line-clamp-2 leading-relaxed mb-6">
+                      {product.description || "Indulge in this handcrafted masterpiece made with passion."}
+                    </p>
+
+                    {/* Bottom row: price and add button */}
+                    <div className="flex items-center justify-between mt-auto pt-4 border-t border-brand/5">
+                      <span className="text-2xl font-black text-brand tracking-tighter">₹{product.price}</span>
+                      
+                      {/* Add Button */}
+                      <div>
+                        {(() => {
+                          const productItems = items.filter(i => i.id === product.id || i.id.startsWith(`${product.id}-`));
+                          const totalQty = productItems.reduce((sum, i) => sum + i.quantity, 0);
+                          const hasVariations = product.variations && (product.variations as any).length > 0;
+
+                          if (totalQty > 0) {
+                            return (
+                              <div className="flex items-center gap-2.5 bg-brand/5 border border-brand/10 rounded-full p-1 h-10 shadow-sm" onClick={e => e.stopPropagation()}>
+                                <button 
+                                  onClick={() => updateQuantity(productItems[0].id, -1)}
+                                  className="w-8 h-8 bg-white hover:bg-brand/10 text-brand rounded-full flex items-center justify-center hover:scale-105 transition-all shadow-sm cursor-pointer"
+                                >
+                                  <Minus size={12} />
+                                </button>
+                                <span className="font-black text-brand text-xs min-w-4 text-center">{totalQty}</span>
+                                <button 
+                                  onClick={() => updateQuantity(productItems[0].id, 1)}
+                                  className="w-8 h-8 bg-white hover:bg-brand/10 text-brand rounded-full flex items-center justify-center hover:scale-105 transition-all shadow-sm cursor-pointer"
+                                >
+                                  <Plus size={12} />
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (hasVariations) openQuickView(product);
+                                else handleAddToCart(product);
+                              }}
+                              disabled={product.stock_status === 'Out of Stock'}
+                              className="h-10 px-5 bg-brand hover:bg-brand/90 disabled:opacity-50 text-white rounded-full text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer"
+                            >
+                              {product.stock_status === 'Out of Stock' ? 'Sold Out' : (hasVariations ? 'Options' : 'Add to jar')}
+                            </button>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Product Quick View Modal */}
+      <AnimatePresence>
+        {showProductModal && selectedProduct && (
+          <div 
+            className="fixed inset-0 bg-brand-dark/40 backdrop-blur-md z-[250] flex items-end md:items-center justify-center p-0 md:p-4"
+            onClick={() => setShowProductModal(false)}
+          >
+            <motion.div 
+              initial={{ y: "100%", opacity: 0 }} 
+              animate={{ y: 0, opacity: 1 }} 
+              exit={{ y: "100%", opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              drag="y"
+              dragConstraints={{ top: 0 }}
+              dragElastic={0.2}
+              onDragEnd={(_, info) => {
+                if (info.offset.y > 100) setShowProductModal(false);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white w-full max-w-2xl rounded-t-[2.5rem] md:rounded-[3rem] shadow-layer-3 border border-brand/5 overflow-hidden flex flex-col md:flex-row relative max-h-[92vh] md:max-h-[90vh]"
+            >
+              {/* Drag Handle (Mobile Only) */}
+              <div className="w-12 h-1.5 bg-brand/10 rounded-full mx-auto mt-4 mb-2 md:hidden" />
+
+              <button 
+                onClick={() => setShowProductModal(false)} 
+                className="absolute top-4 right-4 md:top-6 md:right-6 w-10 h-10 rounded-full bg-white/90 backdrop-blur-md text-brand flex items-center justify-center hover:bg-brand hover:text-white transition-all shadow-soft z-[110] border border-brand/5"
+              >
+                <X size={20} />
+              </button>
+
+              {/* Image Section */}
+              <div className="w-full md:w-[55%] h-80 md:h-auto bg-brand/5 relative">
+                 {selectedProduct.images && selectedProduct.images[0] ? (
+                   <img src={selectedProduct.images[0]} className="w-full h-full object-cover" alt={selectedProduct.name} />
+                 ) : (
+                   <div className="w-full h-full flex items-center justify-center text-8xl opacity-10">🍰</div>
+                 )}
+              </div>
+
+              {/* Info Section */}
+              <div className="w-full md:w-[45%] p-8 sm:p-12 flex flex-col bg-white">
+                <div className="mb-10">
+                  <div className="flex items-center justify-between">
+                    <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] sm:text-[10px] mb-3 opacity-60">{selectedProduct.category}</p>
+                    {/* Favorites Toggle in Modal */}
+                    <button
+                      onClick={() => toggleFavorite(selectedProduct.id)}
+                      className="w-8 h-8 rounded-full border border-brand/10 flex items-center justify-center hover:scale-105 transition-all shadow-sm mr-6"
+                    >
+                      <Heart 
+                        size={14} 
+                        className={favorites.includes(selectedProduct.id) ? 'fill-red-500 stroke-red-500 text-red-500' : 'text-brand'} 
+                      />
+                    </button>
+                  </div>
+                  <h3 className="text-3xl sm:text-5xl font-black text-brand-dark tracking-tight leading-[1.1] mb-4">{selectedProduct.name}</h3>
+                  <div className="flex items-center gap-6">
+                    <p className="text-3xl font-black text-brand tracking-tighter">₹{selectedProduct.price}</p>
+                    <div className="h-6 w-px bg-brand/10" />
+                    <p className="text-[10px] font-bold text-brand-dark/60 uppercase tracking-widest">Premium Quality</p>
+                  </div>
+                  <p className="text-brand-dark/70 font-medium leading-relaxed text-sm sm:text-base mt-8 italic">
+                    "{selectedProduct.description || "Indulge in this handcrafted masterpiece made with passion and the finest ingredients."}"
+                  </p>
+                </div>
+
+                <div className="flex-1 overflow-y-auto no-scrollbar pr-2">
+                  {selectedProduct.variations && (selectedProduct.variations as any).length > 0 && (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between border-b border-brand/5 pb-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-dark/65">Select your preference</p>
+                        <p className="text-[10px] font-bold text-brand italic">Scroll for more →</p>
+                      </div>
+                      
+                      <div className="flex overflow-x-auto no-scrollbar gap-4 pb-4 -mx-2 px-2 snap-x">
+                        {(selectedProduct.variations as any).map((v: any, idx: number) => {
+                          const variationId = `${selectedProduct.id}-${v.name}`;
+                          const cartItem = items.find(i => i.id === variationId);
+                          const qty = cartItem?.quantity || 0;
+
+                          return (
+                            <motion.div 
+                              key={idx}
+                              whileTap={{ scale: 0.95 }}
+                              className={`shrink-0 w-40 p-6 rounded-[2rem] border-2 transition-all snap-start flex flex-col items-center text-center gap-4 ${qty > 0 ? 'bg-brand/10 border-brand shadow-luxury' : 'bg-brand/5 border-transparent hover:border-brand/20 hover:bg-white shadow-soft'}`}
+                            >
+                              <div className="space-y-1 mt-2">
+                                <p className="font-black text-brand-dark text-sm tracking-tight">{v.name}</p>
+                                <p className="font-black text-brand text-lg tracking-tighter">₹{v.price}</p>
+                              </div>
+                              
+                              {qty > 0 ? (
+                                <motion.div 
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="flex items-center gap-3 bg-white rounded-xl p-1.5 border border-brand/10 h-10 w-full justify-between mt-2 shadow-sm"
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  <button 
+                                    onClick={() => updateQuantity(variationId, -1)}
+                                    className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all"
+                                  >
+                                    <Minus size={12} />
+                                  </button>
+                                  <span className="font-black text-brand text-sm w-4">{qty}</span>
+                                  <button 
+                                    onClick={() => updateQuantity(variationId, 1)}
+                                    className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all"
+                                  >
+                                    <Plus size={12} />
+                                  </button>
+                                </motion.div>
+                              ) : (
+                                <button
+                                  onClick={() => handleAddToCart(selectedProduct, v)}
+                                  disabled={selectedProduct.stock_status === 'Out of Stock'}
+                                  className="w-full h-10 bg-brand text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-sm hover:scale-105 active:scale-95 transition-all mt-2"
+                                >
+                                  Select Size
+                                </button>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer Add To Jar (Non-variations) */}
+                {(!selectedProduct.variations || (selectedProduct.variations as any).length === 0) && (
+                  <div className="pt-6 border-t border-brand/5 mt-auto">
+                    {(() => {
+                      const qty = items.find(i => i.id === selectedProduct.id)?.quantity || 0;
+                      if (qty > 0) {
+                        return (
+                          <div className="flex items-center justify-between bg-brand/5 border border-brand/10 rounded-2xl p-2 h-16 shadow-inner">
+                            <span className="text-xs font-black text-brand-dark/40 uppercase tracking-[0.2em] pl-4">Added to Jar</span>
+                            <div className="flex items-center gap-4 bg-white rounded-xl p-1.5 shadow-sm border border-brand/5">
+                              <button 
+                                onClick={() => updateQuantity(selectedProduct.id, -1)}
+                                className="w-8 h-8 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                              >
+                                <Minus size={14} />
+                              </button>
+                              <span className="font-black text-brand text-base w-6 text-center">{qty}</span>
+                              <button 
+                                onClick={() => updateQuantity(selectedProduct.id, 1)}
+                                className="w-8 h-8 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <button
+                          onClick={() => handleAddToCart(selectedProduct)}
+                          disabled={selectedProduct.stock_status === 'Out of Stock'}
+                          className="h-16 w-full bg-brand hover:bg-brand/90 disabled:opacity-50 text-white rounded-2xl text-xs uppercase tracking-[0.25em] font-black shadow-md hover:scale-[1.01] active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <ShoppingCart size={16} />
+                          {selectedProduct.stock_status === 'Out of Stock' ? 'Sold Out' : 'Add to jar'}
+                        </button>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <ScrollToTopButton />
+    </>
+  );
+};

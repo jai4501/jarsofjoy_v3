@@ -4,6 +4,7 @@ import { useCartStore } from '../store/useCartStore';
 import { useToastStore } from '../store/useToastStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useProductStore } from '../store/useProductStore';
+import { useFavoritesStore } from '../store/useFavoritesStore';
 import type { Database } from '../types/supabase';
 import { Button3D } from '../components/ui/Button3D';
 import { ShoppingCart, Sparkles, FileDown, Heart, ChevronRight, X, ArrowLeft, Utensils, Minus, Plus } from 'lucide-react';
@@ -17,6 +18,7 @@ export const Storefront = () => {
   const { getSetting } = useSettingsStore();
   const { addItem, updateQuantity, items } = useCartStore();
   const { addToast } = useToastStore();
+  const { favorites, toggleFavorite } = useFavoritesStore();
   const [searchParams] = useSearchParams();
   const { categoryName } = useParams();
   
@@ -315,9 +317,16 @@ export const Storefront = () => {
                           </div>
                         )}
 
-                        <div className="absolute top-4 right-4 sm:top-8 sm:right-8 h-10 w-10 sm:h-14 sm:w-14 bg-white/90 backdrop-blur-md rounded-2xl flex items-center justify-center text-brand shadow-luxury opacity-0 group-hover:opacity-100 transition-all duration-500 z-20 hover:scale-110">
-                           <Heart size={18} className="sm:size-7 group-hover:fill-brand transition-all" />
-                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(product.id);
+                          }}
+                          className={`absolute top-4 right-4 sm:top-8 sm:right-8 h-10 w-10 sm:h-14 sm:w-14 bg-white/90 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-luxury z-20 transition-all duration-300 hover:scale-110 ${favorites.includes(product.id) ? 'opacity-100 text-red-500' : 'text-brand opacity-100 sm:opacity-0 group-hover:opacity-100'}`}
+                          title={favorites.includes(product.id) ? "Remove from Favorites" : "Add to Favorites"}
+                        >
+                           <Heart size={18} className={`sm:size-7 transition-all ${favorites.includes(product.id) ? 'fill-red-500' : 'group-hover:fill-brand'}`} />
+                        </button>
                       </div>
                       
                       <div className="px-2 sm:px-6 pb-2 sm:pb-6 flex-grow flex flex-col items-center">
@@ -445,7 +454,19 @@ export const Storefront = () => {
               {/* Info Section */}
               <div className="w-full md:w-[45%] p-8 sm:p-12 flex flex-col bg-white">
                 <div className="mb-10">
-                  <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] sm:text-[10px] mb-3 opacity-60">{selectedProduct.category}</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] sm:text-[10px] mb-3 opacity-60">{selectedProduct.category}</p>
+                    <button
+                      onClick={() => toggleFavorite(selectedProduct.id)}
+                      className="w-8 h-8 rounded-full border border-brand/10 flex items-center justify-center hover:scale-105 transition-all shadow-sm mr-6"
+                      title={favorites.includes(selectedProduct.id) ? "Remove from Favorites" : "Add to Favorites"}
+                    >
+                      <Heart 
+                        size={14} 
+                        className={favorites.includes(selectedProduct.id) ? 'fill-red-500 stroke-red-500 text-red-500' : 'text-brand'} 
+                      />
+                    </button>
+                  </div>
                   <h3 className="text-3xl sm:text-5xl font-black text-brand-dark tracking-tight leading-[1.1] mb-4">{selectedProduct.name}</h3>
                   <div className="flex items-center gap-6">
                     <p className="text-3xl font-black text-brand tracking-tighter">₹{selectedProduct.price}</p>
