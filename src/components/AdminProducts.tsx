@@ -52,6 +52,37 @@ export const AdminProducts = () => {
   const [newCatImage, setNewCatImage] = useState('');
   const [newCatIsActive, setNewCatIsActive] = useState(true);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [uploadingCategory, setUploadingCategory] = useState(false);
+
+  const handleCategoryImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingCategory(true);
+    try {
+      const file = files[0];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
+      const filePath = `category-images/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('products')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('products')
+        .getPublicUrl(filePath);
+
+      setNewCatImage(publicUrl);
+      addToast('Category image uploaded successfully!', 'sweet');
+    } catch (err: any) {
+      addToast(err.message, 'error');
+    } finally {
+      setUploadingCategory(false);
+    }
+  };
 
   const startEditCategory = (cat: ProductCategory) => {
     setEditingCategoryId(cat.id);
@@ -1003,25 +1034,57 @@ export const AdminProducts = () => {
                           </div>
                         )}
 
-                        {/* Image URL Input */}
+                        {/* Category Image Upload / Link */}
                         {dbHasImageUrl && (
                           <div className="space-y-1.5 text-left shrink-0">
-                             <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40 ml-2">Image Link (Optional)</label>
-                             <div className="relative group">
-                               <input 
-                                 placeholder="https://images.unsplash.com/..." 
-                                 value={newCatImage} 
-                                 onChange={e => setNewCatImage(e.target.value)} 
-                                 className="w-full h-11 bg-white border border-brand/10 focus:border-brand/35 rounded-xl px-4 pr-11 font-bold outline-none shadow-inner text-xs text-brand-dark" 
-                               />
-                               <div className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg bg-brand/5 flex items-center justify-center overflow-hidden border border-brand/10 shadow-sm shrink-0">
-                                 {newCatImage ? (
-                                   <img src={newCatImage} className="w-full h-full object-cover" alt="preview" />
-                                 ) : (
-                                   <ImageIcon size={12} className="text-brand/30" />
-                                 )}
+                            <div className="flex items-center justify-between ml-2">
+                              <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Category Image</label>
+                              {newCatImage && (
+                                <button 
+                                  type="button" 
+                                  onClick={() => setNewCatImage('')}
+                                  className="text-[9px] font-black uppercase text-red-500 hover:underline cursor-pointer"
+                                >
+                                  Clear Image
+                                </button>
+                              )}
+                            </div>
+                            
+                            <div className="flex flex-col sm:flex-row gap-3">
+                              {/* Upload Button */}
+                              <label className={`flex items-center justify-center gap-2 h-11 px-4 rounded-xl border border-dashed text-xs font-black uppercase tracking-widest cursor-pointer transition-all select-none ${uploadingCategory ? 'bg-brand/10 border-brand/20 text-brand' : 'bg-white border-brand/20 hover:border-brand/40 text-brand-dark hover:bg-brand/5 shadow-sm'}`}>
+                                {uploadingCategory ? (
+                                  <RefreshCw size={14} className="animate-spin text-brand" />
+                                ) : (
+                                  <Upload size={14} className="text-brand" />
+                                )}
+                                {uploadingCategory ? 'Uploading...' : 'Upload Image'}
+                                <input 
+                                  type="file" 
+                                  accept="image/*" 
+                                  className="hidden" 
+                                  onChange={handleCategoryImageUpload} 
+                                  disabled={uploadingCategory} 
+                                />
+                              </label>
+
+                              {/* URL input */}
+                              <div className="relative flex-grow">
+                                <input 
+                                  placeholder="Or paste image URL..." 
+                                  value={newCatImage} 
+                                  onChange={e => setNewCatImage(e.target.value)} 
+                                  className="w-full h-11 bg-white border border-brand/10 focus:border-brand/35 rounded-xl px-4 pr-11 font-bold outline-none shadow-inner text-xs text-brand-dark" 
+                                />
+                                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg bg-brand/5 flex items-center justify-center overflow-hidden border border-brand/10 shadow-sm shrink-0">
+                                  {newCatImage ? (
+                                    <img src={newCatImage} className="w-full h-full object-cover" alt="preview" />
+                                  ) : (
+                                    <ImageIcon size={12} className="text-brand/30" />
+                                  )}
                                 </div>
                               </div>
+                            </div>
                           </div>
                         )}
 
