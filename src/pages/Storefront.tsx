@@ -430,35 +430,35 @@ export const Storefront = () => {
                 if (info.offset.y > 100) setShowProductModal(false);
               }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white w-full max-w-2xl rounded-t-[2.5rem] md:rounded-[3rem] shadow-layer-3 border border-brand/5 overflow-hidden flex flex-col md:flex-row relative max-h-[92vh] md:max-h-[90vh]"
+              className="bg-white w-full max-w-4xl rounded-t-[2.5rem] md:rounded-[3rem] shadow-layer-3 border border-brand/5 overflow-hidden flex flex-col md:flex-row relative max-h-[92vh] md:max-h-[85vh] md:h-[540px]"
             >
               {/* Drag Handle (Mobile Only) */}
               <div className="w-12 h-1.5 bg-brand/10 rounded-full mx-auto mt-4 mb-2 md:hidden" />
 
               <button 
                 onClick={() => setShowProductModal(false)} 
-                className="absolute top-4 right-4 md:top-6 md:right-6 w-10 h-10 rounded-full bg-white/90 backdrop-blur-md text-brand flex items-center justify-center hover:bg-brand hover:text-white transition-all shadow-soft z-[110] border border-brand/5"
+                className="absolute top-4 right-4 md:top-6 md:right-6 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md text-brand flex items-center justify-center hover:bg-brand hover:text-white transition-all shadow-soft z-[110] border border-brand/5 cursor-pointer"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
 
               {/* Image Section */}
-              <div className="w-full md:w-[55%] h-80 md:h-auto bg-brand/5 relative">
+              <div className="w-full md:w-1/2 h-72 md:h-full bg-brand/5 relative overflow-hidden flex-shrink-0">
                  {selectedProduct.images && selectedProduct.images[0] ? (
                    <img src={selectedProduct.images[0]} className="w-full h-full object-cover" alt={selectedProduct.name} />
                  ) : (
-                   <div className="w-full h-full flex items-center justify-center text-8xl opacity-10">🍰</div>
+                   <div className="w-full h-full flex items-center justify-center text-7xl opacity-10">🍰</div>
                  )}
               </div>
 
               {/* Info Section */}
-              <div className="w-full md:w-[45%] p-8 sm:p-12 flex flex-col bg-white">
-                <div className="mb-10">
+              <div className="w-full md:w-1/2 p-6 md:p-10 flex flex-col bg-white h-full justify-between overflow-y-auto no-scrollbar">
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] sm:text-[10px] mb-3 opacity-60">{selectedProduct.category}</p>
+                    <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] sm:text-[9px] opacity-60">{selectedProduct.category}</p>
                     <button
                       onClick={() => toggleFavorite(selectedProduct.id)}
-                      className="w-8 h-8 rounded-full border border-brand/10 flex items-center justify-center hover:scale-105 transition-all shadow-sm mr-6"
+                      className="w-8 h-8 rounded-full border border-brand/10 flex items-center justify-center hover:scale-105 transition-all shadow-sm cursor-pointer"
                       title={favorites.includes(selectedProduct.id) ? "Remove from Favorites" : "Add to Favorites"}
                     >
                       <Heart 
@@ -467,26 +467,31 @@ export const Storefront = () => {
                       />
                     </button>
                   </div>
-                  <h3 className="text-3xl sm:text-5xl font-black text-brand-dark tracking-tight leading-[1.1] mb-4">{selectedProduct.name}</h3>
-                  <div className="flex items-center gap-6">
-                    <p className="text-3xl font-black text-brand tracking-tighter">₹{selectedProduct.price}</p>
-                    <div className="h-6 w-px bg-brand/10" />
-                    <p className="text-[10px] font-bold text-brand-dark/60 uppercase tracking-widest">Premium Quality</p>
+                  
+                  <div className="space-y-2">
+                    <h3 className="text-2xl md:text-3xl font-black text-brand-dark tracking-tight leading-tight heading-serif">{selectedProduct.name}</h3>
+                    <div className="flex items-center gap-4">
+                      <p className="text-xl md:text-2xl font-black text-brand tracking-tighter">₹{selectedProduct.price}</p>
+                      <div className="h-4 w-px bg-brand/10" />
+                      <p className="text-[9px] font-bold text-brand-dark/40 uppercase tracking-widest">Premium Quality</p>
+                    </div>
                   </div>
-                  <p className="text-brand-dark/70 font-medium leading-relaxed text-sm sm:text-base mt-8 italic">
+
+                  <p className="text-brand-dark/70 font-medium leading-relaxed text-xs sm:text-sm italic border-l-2 border-brand/15 pl-3 py-1">
                     "{selectedProduct.description || "Indulge in this handcrafted masterpiece made with passion and the finest ingredients."}"
                   </p>
                 </div>
 
-                <div className="flex-1 overflow-y-auto no-scrollbar pr-2">
+                {/* Variations & Options */}
+                <div className="flex-1 overflow-y-auto no-scrollbar py-6">
                   {selectedProduct.variations && (selectedProduct.variations as any).length > 0 && (
-                    <div className="space-y-6">
-                      <div className="flex items-center justify-between border-b border-brand/5 pb-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-dark/65">Select your preference</p>
-                        <p className="text-[10px] font-bold text-brand italic">Scroll for more →</p>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between border-b border-brand/5 pb-2">
+                        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-brand-dark/65">Select your preference</p>
+                        <p className="text-[9px] font-bold text-brand italic">Scroll for sizes →</p>
                       </div>
                       
-                      <div className="flex overflow-x-auto no-scrollbar gap-4 pb-4 -mx-2 px-2 snap-x">
+                      <div className="flex overflow-x-auto no-scrollbar gap-3 pb-2 -mx-2 px-2 snap-x">
                         {(selectedProduct.variations as any).map((v: any, idx: number) => {
                           const variationId = `${selectedProduct.id}-${v.name}`;
                           const cartItem = items.find(i => i.id === variationId);
@@ -496,40 +501,41 @@ export const Storefront = () => {
                             <motion.div 
                               key={idx}
                               whileTap={{ scale: 0.95 }}
-                              animate={qty > 0 ? { scale: [1, 1.05, 1], transition: { duration: 0.2 } } : {}}
-                              className={`shrink-0 w-40 p-6 rounded-[2rem] border-2 transition-all snap-start flex flex-col items-center text-center gap-4 ${qty > 0 ? 'bg-brand/10 border-brand shadow-luxury' : 'bg-brand/5 border-transparent hover:border-brand/20 hover:bg-white shadow-soft'}`}
+                              animate={qty > 0 ? { scale: [1, 1.02, 1], transition: { duration: 0.2 } } : {}}
+                              className={`shrink-0 w-32 p-4 rounded-[1.5rem] border-2 transition-all snap-start flex flex-col items-center text-center gap-3 ${qty > 0 ? 'bg-brand/10 border-brand shadow-luxury' : 'bg-brand/5 border-transparent hover:border-brand/20 hover:bg-white shadow-soft'}`}
                             >
-                              <div className="space-y-1 mt-2">
-                                <p className="font-black text-brand-dark text-sm tracking-tight">{v.name}</p>
-                                <p className="font-black text-brand text-lg tracking-tighter">₹{v.price}</p>
+                              <div className="space-y-0.5 mt-1">
+                                <p className="font-black text-brand-dark text-xs tracking-tight">{v.name}</p>
+                                <p className="font-black text-brand text-sm tracking-tighter">₹{v.price}</p>
                               </div>
                               
                               {qty > 0 ? (
                                 <motion.div 
-                                  initial={{ opacity: 0, y: 10 }}
+                                  initial={{ opacity: 0, y: 5 }}
                                   animate={{ opacity: 1, y: 0 }}
-                                  className="flex items-center gap-3 bg-white rounded-xl p-1.5 border border-brand/10 h-10 w-full justify-between mt-2 shadow-sm"
+                                  className="flex items-center gap-2 bg-white rounded-lg p-1 border border-brand/10 h-8 w-full justify-between mt-1 shadow-sm"
                                 >
                                   <button 
                                     onClick={() => updateQuantity(variationId, -1)}
-                                    className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all"
+                                    className="w-6 h-6 bg-brand/5 rounded-md flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
                                   >
-                                    <Minus size={12} />
+                                    <Minus size={10} />
                                   </button>
-                                  <span className="font-black text-brand text-sm w-4">{qty}</span>
+                                  <span className="font-black text-brand text-xs w-4">{qty}</span>
                                   <button 
                                     onClick={() => updateQuantity(variationId, 1)}
-                                    className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all"
+                                    className="w-6 h-6 bg-brand/5 rounded-md flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
                                   >
-                                    <Plus size={12} />
+                                    <Plus size={10} />
                                   </button>
                                 </motion.div>
                               ) : (
-                                <button 
+                                <button
                                   onClick={() => handleAddToCart(selectedProduct, v)}
-                                  className="h-10 w-full bg-brand text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md hover:scale-105 active:scale-95 transition-all mt-2"
+                                  disabled={selectedProduct.stock_status === 'Out of Stock'}
+                                  className="w-full h-8 bg-brand text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm hover:scale-105 active:scale-95 transition-all mt-1 cursor-pointer"
                                 >
-                                  Add to jar
+                                  Select
                                 </button>
                               )}
                             </motion.div>
@@ -540,28 +546,30 @@ export const Storefront = () => {
                   )}
                 </div>
 
+                {/* Footer Add To Jar (Non-variations) */}
                 {(!selectedProduct.variations || (selectedProduct.variations as any).length === 0) && (
-                  <div className="mt-8 pt-8 border-t border-brand/5">
+                  <div className="pt-4 border-t border-brand/5 mt-auto flex-shrink-0">
                     {(() => {
-                      const cartItem = items.find(i => i.id === selectedProduct.id);
-                      const qty = cartItem?.quantity || 0;
-
+                      const qty = items.find(i => i.id === selectedProduct.id)?.quantity || 0;
                       if (qty > 0) {
                         return (
-                          <div className="flex items-center justify-center gap-6 bg-brand/5 rounded-[2rem] p-3 border border-brand/10">
-                            <button 
-                              onClick={() => updateQuantity(selectedProduct.id, -1)}
-                              className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all shadow-soft"
-                            >
-                              <Minus size={20} />
-                            </button>
-                            <span className="font-black text-brand text-2xl w-8 text-center">{qty}</span>
-                            <button 
-                              onClick={() => updateQuantity(selectedProduct.id, 1)}
-                              className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all shadow-soft"
-                            >
-                              <Plus size={20} />
-                            </button>
+                          <div className="flex items-center justify-between bg-brand/5 border border-brand/10 rounded-2xl p-1.5 h-14 shadow-inner">
+                            <span className="text-[10px] font-black text-brand-dark/40 uppercase tracking-[0.2em] pl-3">Added to Jar</span>
+                            <div className="flex items-center gap-3 bg-white rounded-xl p-1 shadow-sm border border-brand/5">
+                              <button 
+                                onClick={() => updateQuantity(selectedProduct.id, -1)}
+                                className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                              >
+                                <Minus size={12} />
+                              </button>
+                              <span className="font-black text-brand text-sm w-4 text-center">{qty}</span>
+                              <button 
+                                onClick={() => updateQuantity(selectedProduct.id, 1)}
+                                className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                              >
+                                <Plus size={12} />
+                              </button>
+                            </div>
                           </div>
                         );
                       }
@@ -569,9 +577,10 @@ export const Storefront = () => {
                       return (
                         <Button3D 
                           onClick={() => handleAddToCart(selectedProduct)} 
-                          className="w-full h-16 text-sm uppercase tracking-widest font-black"
+                          disabled={selectedProduct.stock_status === 'Out of Stock'}
+                          className="w-full h-12 text-xs uppercase tracking-widest font-black"
                         >
-                          Add to Jar <ShoppingCart className="ml-2" size={18} />
+                          Add to Jar <ShoppingCart className="ml-2" size={14} />
                         </Button3D>
                       );
                     })()}
