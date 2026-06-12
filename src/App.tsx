@@ -5,6 +5,7 @@ import { ToastContainer } from './components/ToastContainer';
 import { ScrollToTop } from './components/ScrollToTop';
 import { ScrollToTopButton } from './components/ui/ScrollToTopButton';
 import { PermissionModal } from './components/ui/PermissionModal';
+import PWAInstallBanner from './components/PWAInstallBanner';
 import { useUserStore } from './store/useUserStore';
 import { useSettingsStore } from './store/useSettingsStore';
 import { useCartStore } from './store/useCartStore';
@@ -95,6 +96,7 @@ function App() {
         <Navbar />
         <ScrollToTopButton />
         <PermissionModal />
+        <PWAInstallBanner />
       </div>
     </Router>
   );
