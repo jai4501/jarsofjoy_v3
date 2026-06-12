@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import type { Database } from '../types/supabase';
+import { useProductStore } from '../store/useProductStore';
 import { Button3D } from './ui/Button3D';
 import { FloatingCard } from './ui/FloatingCard';
 import { Plus, Trash2, Edit3, Image as ImageIcon, Loader2, Check, X, AlertCircle, Search, Filter, Layers, Upload, RefreshCw, ChevronUp, ChevronDown, ChevronRight, Folder } from 'lucide-react';
@@ -63,7 +64,7 @@ export const AdminProducts = () => {
       const file = files[0];
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
-      const filePath = `category-images/${fileName}`;
+      const filePath = `product-images/cat-${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('products')
@@ -211,6 +212,7 @@ export const AdminProducts = () => {
       setNewCatIsActive(true);
       fetchCategories();
       fetchProducts(); // Refresh products to show updated category names
+      useProductStore.getState().fetchCatalog(true);
     } catch (err: any) {
       addToast(err.message, 'error');
     }
@@ -233,6 +235,7 @@ export const AdminProducts = () => {
 
       fetchCategories();
       fetchProducts(); // Refresh products list
+      useProductStore.getState().fetchCatalog(true);
       addToast(`Category "${name}" deleted!`, 'sweet');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -276,6 +279,7 @@ export const AdminProducts = () => {
       
       addToast('Order updated!', 'sweet');
       fetchCategories();
+      useProductStore.getState().fetchCatalog(true);
     } catch (err: any) {
       addToast(err.message, 'error');
     }
@@ -355,6 +359,7 @@ export const AdminProducts = () => {
       setShowModal(false);
       resetForm();
       fetchProducts();
+      useProductStore.getState().fetchCatalog(true);
     } catch (err: any) {
       addToast(err.message, 'error');
     }
@@ -412,6 +417,7 @@ export const AdminProducts = () => {
       if (error) throw error;
       addToast('Treat removed from menu', 'sweet');
       fetchProducts();
+      useProductStore.getState().fetchCatalog(true);
     } catch (err: any) {
       addToast(err.message, 'error');
     }
@@ -436,6 +442,7 @@ export const AdminProducts = () => {
       addToast(`Category "${categoryFilter}" deleted successfully.`, 'sweet');
       setCategoryFilter('All');
       fetchProducts();
+      useProductStore.getState().fetchCatalog(true);
     } catch (err: any) {
       addToast(err.message, 'error');
     }
@@ -1052,7 +1059,10 @@ export const AdminProducts = () => {
                             
                             <div className="flex flex-col sm:flex-row gap-3">
                               {/* Upload Button */}
-                              <label className={`flex items-center justify-center gap-2 h-11 px-4 rounded-xl border border-dashed text-xs font-black uppercase tracking-widest cursor-pointer transition-all select-none ${uploadingCategory ? 'bg-brand/10 border-brand/20 text-brand' : 'bg-white border-brand/20 hover:border-brand/40 text-brand-dark hover:bg-brand/5 shadow-sm'}`}>
+                              <label 
+                                htmlFor="category-image-upload"
+                                className={`flex items-center justify-center gap-2 h-11 px-4 rounded-xl border border-dashed text-xs font-black uppercase tracking-widest cursor-pointer transition-all select-none ${uploadingCategory ? 'bg-brand/10 border-brand/20 text-brand' : 'bg-white border-brand/20 hover:border-brand/40 text-brand-dark hover:bg-brand/5 shadow-sm'}`}
+                              >
                                 {uploadingCategory ? (
                                   <RefreshCw size={14} className="animate-spin text-brand" />
                                 ) : (
@@ -1060,6 +1070,7 @@ export const AdminProducts = () => {
                                 )}
                                 {uploadingCategory ? 'Uploading...' : 'Upload Image'}
                                 <input 
+                                  id="category-image-upload"
                                   type="file" 
                                   accept="image/*" 
                                   className="hidden" 

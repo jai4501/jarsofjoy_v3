@@ -594,7 +594,15 @@ export const Home = () => {
           <div className="space-y-16">
             {activeCategories.map((cat) => {
               const normalizedName = cat.name.toLowerCase();
-              const meta = categoryMeta[normalizedName] || {
+              
+              // Map database category names to custom metadata keys
+              let metaKey = normalizedName;
+              if (normalizedName.includes('cookie')) metaKey = 'cookies';
+              if (normalizedName.includes('brownie')) metaKey = 'brownies';
+              if (normalizedName.includes('tea cake')) metaKey = 'tea cakes';
+              if (normalizedName.includes('celebration cake')) metaKey = 'celebration cakes';
+
+              const meta = categoryMeta[metaKey] || {
                 subtitle: 'Handcrafted and freshly baked.',
                 description: `Explore our premium selection of fresh ${cat.name.toLowerCase()}, baked with care and the finest ingredients.`,
                 fallbackImage: '/category_swiss_roll.png'
