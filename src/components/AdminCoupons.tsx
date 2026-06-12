@@ -120,7 +120,7 @@ export const AdminCoupons = () => {
               placeholder="Search coupons..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full p-4 pl-12 glass-card border-none outline-none font-bold text-sm shadow-soft"
+              className="w-full h-14 pl-12 pr-6 bg-white rounded-2xl border-2 border-brand/5 shadow-soft outline-none focus:border-brand/30 transition-all font-bold text-brand-dark text-sm"
             />
           </div>
           <Button3D onClick={() => openModal()} className="h-14 px-6 shrink-0">
