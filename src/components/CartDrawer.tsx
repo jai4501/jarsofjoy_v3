@@ -81,7 +81,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const [step, setStep] = useState<'cart' | 'checkout' | 'upi_payment' | 'success'>('cart');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
-  const [deliveryType, setDeliveryType] = useState<'pickup' | 'delivery'>('pickup');
+  const [deliveryType, setDeliveryType] = useState<'pickup' | 'delivery'>('delivery');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [placedOrderId, setPlacedOrderId] = useState('');
@@ -1089,26 +1089,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                         </>
                       )}
 
-                      {/* Delivery Type Segmented Toggle */}
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/50">Delivery Mode</label>
-                        <div className="grid grid-cols-2 p-1 bg-brand-dark/5 rounded-2xl border border-brand/5 relative">
-                          <button
-                            type="button"
-                            onClick={() => setDeliveryType('pickup')}
-                            className={`h-10 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${deliveryType === 'pickup' ? 'bg-white text-brand shadow-sm' : 'text-brand-dark/45 hover:text-brand-dark'}`}
-                          >
-                            <MapPin size={14} /> Pickup
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeliveryType('delivery')}
-                            className={`h-10 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${deliveryType === 'delivery' ? 'bg-white text-brand shadow-sm' : 'text-brand-dark/45 hover:text-brand-dark'}`}
-                          >
-                            <Truck size={14} /> Delivery
-                          </button>
-                        </div>
-                      </div>
+                      {/* Removed Delivery Type Segmented Toggle to enforce Delivery only */}
 
                       {/* Address Selection / Creation (conditional) */}
                       {deliveryType === 'delivery' && (
