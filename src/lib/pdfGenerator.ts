@@ -73,7 +73,27 @@ export const generateMenuPDF = async (products: Product[], businessInfo: Record<
     logo: businessInfo.business_logo || ''
   };
 
-  const drawHeader = async (isContinuation = false, categoryName = '') => {
+  const activeProducts = products.filter(p => p.active !== false).sort((a, b) => a.price - b.price);
+
+  // Preload all product images and logo in parallel to avoid sequential network delays
+  const imageUrlsToLoad = [
+    info.logo,
+    ...activeProducts.map(p => p.images?.[0]).filter(Boolean) as string[]
+  ];
+  
+  const imageCache: Record<string, string> = {};
+  await Promise.all(
+    imageUrlsToLoad.map(async (url) => {
+      try {
+        const data = await loadImage(url);
+        if (data) imageCache[url] = data;
+      } catch (err) {
+        console.warn('Failed preloading PDF image:', url, err);
+      }
+    })
+  );
+
+  const drawHeader = (isContinuation = false, categoryName = '') => {
     // Background
     doc.setFillColor(255, 245, 247);
     doc.rect(0, 0, 210, 297, 'F');
@@ -82,7 +102,7 @@ export const generateMenuPDF = async (products: Product[], businessInfo: Record<
     
     if (!isContinuation) {
       if (info.logo) {
-         const logoData = await loadImage(info.logo);
+         const logoData = imageCache[info.logo];
          if (logoData) {
             try { doc.addImage(logoData, 'JPEG', 95, 10, 20, 20); } catch (e) { console.warn('Failed to add logo to PDF:', e); }
          }
@@ -111,10 +131,9 @@ export const generateMenuPDF = async (products: Product[], businessInfo: Record<
     }
   };
 
-  const activeProducts = products.filter(p => p.active !== false).sort((a, b) => a.price - b.price);
   const categories = [...new Set(activeProducts.map(p => p.category || 'Specials'))].sort();
 
-  await drawHeader();
+  drawHeader();
   let currentY = info.logo ? 65 : 50;
 
   for (const category of categories) {
@@ -122,7 +141,7 @@ export const generateMenuPDF = async (products: Product[], businessInfo: Record<
 
     if (currentY > 230) {
       doc.addPage();
-      await drawHeader();
+      drawHeader();
       currentY = info.logo ? 65 : 50;
     }
 
@@ -145,7 +164,7 @@ export const generateMenuPDF = async (products: Product[], businessInfo: Record<
 
       if (currentY + itemHeight > 275) {
         doc.addPage();
-        await drawHeader(true, category);
+        drawHeader(true, category);
         currentY = 25; 
       }
 
@@ -155,18 +174,10 @@ export const generateMenuPDF = async (products: Product[], businessInfo: Record<
       doc.setLineWidth(0.1);
       doc.roundedRect(15, currentY, 180, itemHeight - 5, 5, 5, 'S');
 
-      let imgData = '';
-      if (p.images && p.images[0]) { imgData = await loadImage(p.images[0]); }
+      const imgData = p.images?.[0] ? imageCache[p.images[0]] || '' : '';
 
       if (imgData) {
-        try { doc.addImage(imgData, 'JPEG', 20, currentY + 5, 30, 30); } 
-        catch (e) {
-          doc.setFillColor(245, 245, 245); doc.rect(20, currentY + 5, 30, 30, 'F');
-          doc.setTextColor(180, 180, 180); doc.setFontSize(24); doc.text('🧁', 28, currentY + 25);
-        }
-      } else {
-        doc.setFillColor(245, 245, 245); doc.rect(20, currentY + 5, 30, 30, 'F');
-        doc.setTextColor(180, 180, 180); doc.setFontSize(24); doc.text('🧁', 28, currentY + 25);
+        try { doc.addImage(imgData, 'JPEG', 20, currentY + 5, 30, 30); } catch (e) { console.warn('Failed to draw item image on PDF:', e); }
       }
 
       doc.setTextColor(TEXT_COLOR[0], TEXT_COLOR[1], TEXT_COLOR[2]);

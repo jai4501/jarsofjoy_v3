@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FloatingCard } from './ui/FloatingCard';
@@ -6,6 +6,80 @@ import { Button3D } from './ui/Button3D';
 import { MapPin, Plus, Trash2, Home, Briefcase, Bookmark, Check, RefreshCw, Edit } from 'lucide-react';
 import { useToastStore } from '../store/useToastStore';
 import { useUserStore } from '../store/useUserStore';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+const DefaultIcon = L.icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+
+const cleanLandmark = (landmark: string | null) => {
+  if (!landmark) return '';
+  return landmark.replace(/\s*\[coords:\s*[-+]?[0-9]*\.?[0-9]+,\s*[-+]?[0-9]*\.?[0-9]+\]/, '');
+};
+
+const extractCoords = (landmark: string | null) => {
+  if (!landmark) return null;
+  const match = landmark.match(/\[coords:\s*([-+]?[0-9]*\.?[0-9]+),\s*([-+]?[0-9]*\.?[0-9]+)\]/);
+  if (match) {
+    return {
+      lat: parseFloat(match[1]),
+      lng: parseFloat(match[2])
+    };
+  }
+  return null;
+};
+
+function RecenterMap({ lat, lng }: { lat: number; lng: number }) {
+  const map = useMap();
+  useEffect(() => {
+    if (lat && lng) {
+      map.setView([lat, lng], map.getZoom());
+      setTimeout(() => map.invalidateSize(), 100);
+    }
+  }, [lat, lng, map]);
+  return null;
+}
+
+function MapEvents({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
+function DraggableMarker({ position, onDragEnd }: { position: [number, number]; onDragEnd: (lat: number, lng: number) => void }) {
+  const markerRef = useRef<any>(null);
+  const eventHandlers = useMemo(
+    () => ({
+      dragend() {
+        const marker = markerRef.current;
+        if (marker != null) {
+          const latLng = marker.getLatLng();
+          onDragEnd(latLng.lat, latLng.lng);
+        }
+      },
+    }),
+    [onDragEnd]
+  );
+
+  return (
+    <Marker
+      draggable={true}
+      eventHandlers={eventHandlers}
+      position={position}
+      ref={markerRef}
+      icon={DefaultIcon}
+    />
+  );
+}
 
 interface Address {
   id: string;
@@ -28,6 +102,7 @@ interface AddressManagerProps {
 export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) => {
   const { user } = useUserStore();
   const { addToast } = useToastStore();
+  const { getSetting } = useSettingsStore();
   const [addresses, setAddresses] = useState<Address[]>([]);
 
   const fetchAddresses = async (userId: string) => {
@@ -49,7 +124,7 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
   const [loading, setLoading] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
 
-  const handleEditClick = (addr: Address, e: React.MouseEvent) => {
+  const handleEditClick = async (addr: Address, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingAddressId(addr.id);
     setAddrLabel(addr.label);
@@ -58,8 +133,30 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
     setArea(addr.area);
     setPincode(addr.pincode);
     setDistrict(addr.district);
-    setLandmark(addr.landmark || '');
     setShowAddrForm(true);
+
+    const coords = extractCoords(addr.landmark || null);
+    if (coords) {
+      setLandmark(cleanLandmark(addr.landmark || null));
+      setMapPosition([coords.lat, coords.lng]);
+      setShowMapPicker(true);
+    } else {
+      setLandmark(addr.landmark || '');
+      try {
+        const city = getSetting('address_city', 'Coimbatore');
+        const queryStr = `${addr.street}, ${addr.area}, ${city}, ${addr.pincode}`;
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryStr)}&limit=1`
+        );
+        const data = await response.json();
+        if (data && data[0]) {
+          setMapPosition([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
+          setShowMapPicker(true);
+        }
+      } catch (e) {
+        console.warn('Geocoding edit address failed for map initialization:', e);
+      }
+    }
   };
 
   // Form State
@@ -72,6 +169,89 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
   const [landmark, setLandmark] = useState('');
   const [state] = useState('Tamil Nadu');
   const [postOffices, setPostOffices] = useState<string[]>([]);
+
+  // Search & Map Picker states
+  const [addressSearchQuery, setAddressSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchingLocation, setSearchingLocation] = useState(false);
+  const [mapPosition, setMapPosition] = useState<[number, number] | null>(null);
+  const [showMapPicker, setShowMapPicker] = useState(false);
+
+  const handleLocationSearch = async (query: string) => {
+    setAddressSearchQuery(query);
+    if (query.trim().length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    setSearchingLocation(true);
+    try {
+      const city = getSetting('address_city', 'Coimbatore');
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city + ', ' + query)}&limit=5&addressdetails=1`
+      );
+      const data = await response.json();
+      setSearchResults(data);
+    } catch (e) {
+      console.error('Geocoding search error:', e);
+    } finally {
+      setSearchingLocation(false);
+    }
+  };
+
+  const handleSelectLocationResult = (result: any) => {
+    const addr = result.address || {};
+    const streetName = addr.road || addr.suburb || addr.neighbourhood || '';
+    const areaName = addr.suburb || addr.village || addr.city_district || '';
+    const postalCode = addr.postcode || '';
+    const dist = addr.district || addr.city || 'Coimbatore';
+    
+    setStreet(streetName);
+    setArea(areaName || result.name || '');
+    setPincode(postalCode);
+    setDistrict(dist);
+    
+    const lat = parseFloat(result.lat);
+    const lon = parseFloat(result.lon);
+    setMapPosition([lat, lon]);
+    setShowMapPicker(true);
+    
+    setSearchResults([]);
+    setAddressSearchQuery(result.display_name);
+  };
+
+  const handleShowMapPickerDirectly = () => {
+    const studioLat = parseFloat(getSetting('latitude', '11.0168'));
+    const studioLng = parseFloat(getSetting('longitude', '76.9558'));
+    setMapPosition([studioLat, studioLng]);
+    setShowMapPicker(true);
+    handleMapLocationSelect(studioLat, studioLng);
+  };
+
+  const handleMapLocationSelect = async (lat: number, lng: number) => {
+    setMapPosition([lat, lng]);
+    
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`
+      );
+      if (response.ok) {
+        const result = await response.json();
+        const addr = result.address || {};
+        const streetName = addr.road || addr.suburb || addr.neighbourhood || '';
+        const areaName = addr.suburb || addr.village || addr.city_district || '';
+        const postalCode = addr.postcode || '';
+        const dist = addr.district || addr.city || 'Coimbatore';
+        
+        setStreet(streetName);
+        setArea(areaName || result.name || '');
+        setPincode(postalCode);
+        setDistrict(dist);
+        setAddressSearchQuery(result.display_name || 'Selected Pin Location');
+      }
+    } catch (e) {
+      console.error('Reverse geocoding error:', e);
+    }
+  };
 
   const handlePincodeChange = async (val: string) => {
     const cleanVal = val.replace(/\D/g, '').slice(0, 6);
@@ -116,6 +296,10 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
 
     setLoading(true);
     try {
+      const landmarkWithCoords = mapPosition 
+        ? `${landmark.trim() ? landmark.trim() + ' ' : ''}[coords: ${mapPosition[0]}, ${mapPosition[1]}]` 
+        : landmark.trim() || null;
+
       if (editingAddressId) {
         const { error } = await (supabase
           .from('addresses') as any)
@@ -126,7 +310,7 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
             area: area.trim(),
             pincode: pincode.trim(),
             district: district.trim(),
-            landmark: landmark.trim() || null,
+            landmark: landmarkWithCoords,
           })
           .eq('id', editingAddressId);
 
@@ -166,7 +350,7 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
           pincode: pincode.trim(),
           district: district.trim(),
           state,
-          landmark: landmark.trim() || null,
+          landmark: landmarkWithCoords,
           is_default: addresses.length === 0
         });
 
@@ -194,6 +378,10 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
     setDistrict('');
     setLandmark('');
     setPostOffices([]);
+    setAddressSearchQuery('');
+    setSearchResults([]);
+    setMapPosition(null);
+    setShowMapPicker(false);
   };
 
   const deleteAddress = async (id: string, e: React.MouseEvent) => {
@@ -244,6 +432,84 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
                 <p className="text-xs font-black uppercase tracking-widest text-brand">{editingAddressId ? 'Edit Delivery Point' : 'New Delivery Point'}</p>
                 <button onClick={() => { setShowAddrForm(false); resetAddrForm(); }} className="text-brand-dark/40 hover:text-brand transition-colors"><Trash2 size={20}/></button>
               </div>
+
+              {/* Location Search Input */}
+              <div className="space-y-2 relative z-30 mb-6">
+                <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30 ml-2">Search Location / Street Name</label>
+                <input
+                  type="text"
+                  value={addressSearchQuery}
+                  onChange={(e) => handleLocationSearch(e.target.value)}
+                  placeholder="Start typing your street or area..."
+                  className="w-full h-12 bg-white rounded-xl px-4 outline-none font-bold text-sm border border-brand/10 focus:border-brand/40 shadow-sm text-brand-dark placeholder:normal-case placeholder:font-semibold placeholder:text-brand-dark/45"
+                />
+                
+                {searchingLocation && (
+                  <div className="absolute right-4 top-9">
+                    <RefreshCw className="animate-spin text-brand/60" size={18} />
+                  </div>
+                )}
+
+                {/* Search Results Autocomplete Dropdown */}
+                {searchResults.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-brand/10 rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto pr-1 no-scrollbar divide-y divide-brand/5">
+                    {searchResults.map((result, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectLocationResult(result)}
+                        className="p-3 text-xs font-semibold text-brand-dark/80 hover:bg-brand/5 cursor-pointer transition-colors leading-normal"
+                      >
+                        {result.display_name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Map Picker Toggle & Container */}
+              <div className="space-y-2 relative z-20 mb-6">
+                <div className="flex justify-between items-center">
+                  <button
+                    type="button"
+                    onClick={showMapPicker ? () => setShowMapPicker(false) : handleShowMapPickerDirectly}
+                    className="text-[10px] font-black uppercase tracking-widest text-brand hover:underline flex items-center gap-1"
+                  >
+                    📍 {showMapPicker ? 'Hide Map Picker' : 'Select / Pin on Map'}
+                  </button>
+                </div>
+
+                {showMapPicker && mapPosition && (
+                  <div className="w-full h-48 rounded-2xl overflow-hidden border border-brand/20 shadow-inner relative z-10">
+                    <MapContainer
+                      center={mapPosition}
+                      zoom={15}
+                      scrollWheelZoom={false}
+                      className="h-full w-full"
+                    >
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      <DraggableMarker
+                        position={mapPosition}
+                        onDragEnd={handleMapLocationSelect}
+                      />
+                      <MapEvents onMapClick={handleMapLocationSelect} />
+                      <RecenterMap lat={mapPosition[0]} lng={mapPosition[1]} />
+                    </MapContainer>
+                    <div className="absolute bottom-2 left-2 right-2 bg-white/95 px-2 py-1 rounded-lg text-[8px] font-bold text-brand-dark/70 border border-brand/10 shadow-sm pointer-events-none text-center">
+                      💡 Click map or drag pin to select your exact location
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Separator */}
+              <div className="relative flex py-2 items-center z-10 mb-6">
+                <div className="flex-grow border-t border-brand/10"></div>
+                <span className="flex-shrink mx-3 text-[9px] font-black uppercase tracking-widest text-brand-dark/30">Confirm Address Details</span>
+                <div className="flex-grow border-t border-brand/10"></div>
+              </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  <div className="space-y-2">
@@ -255,25 +521,25 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
                    </div>
                  </div>
                  <div className="space-y-2">
-                   <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30 ml-2">Door / Flat No</label>
-                   <input value={doorNo} onChange={e => setDoorNo(e.target.value)} placeholder="Ex: 42, Green Villa" className="w-full h-12 bg-white rounded-xl px-4 outline-none font-bold text-sm border-2 border-transparent focus:border-brand shadow-sm" />
-                 </div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30 ml-2">Door / Flat No <span className="text-red-500 font-bold">*</span></label>
+                    <input value={doorNo} onChange={e => setDoorNo(e.target.value)} placeholder="Ex: 42, Green Villa" className="w-full h-12 bg-white rounded-xl px-4 outline-none font-bold text-sm border-2 border-transparent focus:border-brand shadow-sm" />
+                  </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                  <div className="space-y-2 md:col-span-2">
-                   <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30 ml-2">Street / Colony</label>
+                   <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30 ml-2">Street / Colony <span className="text-red-500 font-bold">*</span></label>
                    <input value={street} onChange={e => setStreet(e.target.value)} placeholder="Main Road, Layout Name" className="w-full h-12 bg-white rounded-xl px-4 outline-none font-bold text-sm border-2 border-transparent focus:border-brand shadow-sm" />
                  </div>
                  <div className="space-y-2">
-                   <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30 ml-2">Pincode (Auto-fills)</label>
+                   <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30 ml-2">Pincode <span className="text-red-500 font-bold">*</span></label>
                    <input value={pincode} onChange={e => handlePincodeChange(e.target.value)} maxLength={6} placeholder="641001" className="w-full h-12 bg-white rounded-xl px-4 outline-none font-black text-sm border-2 border-transparent focus:border-brand shadow-sm text-brand" />
                  </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                  <div className="space-y-2">
-                   <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30 ml-2">Area / Post Office</label>
+                   <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30 ml-2">Area / Post Office <span className="text-red-500 font-bold">*</span></label>
                    <input 
                      list="profile-areas"
                      value={area} 
@@ -340,7 +606,7 @@ export const AddressManager = ({ onSelect, selectedId }: AddressManagerProps) =>
                 {addr.door_no}, {addr.street}, {addr.area}<br/>
                 {addr.district} - {addr.pincode}
               </p>
-              {addr.landmark && <p className="text-[10px] font-bold text-brand/60 mt-2 flex items-center gap-1"><MapPin size={10}/> {addr.landmark}</p>}
+              {cleanLandmark(addr.landmark || null) && <p className="text-[10px] font-bold text-brand/60 mt-2 flex items-center gap-1"><MapPin size={10}/> {cleanLandmark(addr.landmark || null)}</p>}
             </div>
             
             {selectedId === addr.id && (

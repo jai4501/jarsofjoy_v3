@@ -74,7 +74,14 @@ export const useUserStore = create<UserState>((set, get) => ({
         }
       }
 
-      set({ profile: data || null, loading: false });
+      const profileData = data || null;
+      set({ profile: profileData, loading: false });
+      
+      // Save avatar image dynamically in user local storage cache
+      const avatarUrl = (profileData as any)?.avatar_url;
+      if (avatarUrl) {
+        fetch(avatarUrl, { mode: 'cors' }).catch(() => {});
+      }
     } catch (err: any) {
       console.error('Network Error fetching profile:', err.message);
       set({ loading: false });

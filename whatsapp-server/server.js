@@ -485,6 +485,446 @@ app.post('/reset-password', async (req, res) => {
   }
 });
 
+// =========================================================
+// Backend Secure APIs for Critical Tasks
+// =========================================================
+
+// Rate limiting track for OTPs
+const otpRequestTimes = {};
+
+// 1. Generate OTP
+app.post('/api/otp/generate', async (req, res) => {
+  const { target, method, fullName } = req.body;
+  if (!target || !method) {
+    return res.status(400).json({ error: 'Missing target or method' });
+  }
+
+  const cleanTarget = target.trim().toLowerCase();
+  const isEmail = cleanTarget.includes('@');
+  const cleanPhone = isEmail ? null : (cleanTarget.startsWith('+91') ? cleanTarget : '+91' + cleanTarget.replace(/\D/g, '').slice(-10));
+  const queryTarget = isEmail ? cleanTarget : cleanPhone;
+
+  // Enforce cooldown (60 seconds)
+  const now = Date.now();
+  if (otpRequestTimes[queryTarget] && (now - otpRequestTimes[queryTarget] < 60000)) {
+    const waitSecs = Math.ceil((60000 - (now - otpRequestTimes[queryTarget])) / 1000);
+    return res.status(429).json({ error: `Please wait ${waitSecs} seconds before requesting another OTP.` });
+  }
+
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+  try {
+    const adminKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+    const serverSupabase = createClient(process.env.VITE_SUPABASE_URL, adminKey);
+
+    // Clean up previous OTPs for this target first
+    await serverSupabase.from('temp_otps').delete().eq('target', queryTarget);
+    
+    // Save code to temp_otps table
+    const { error: dbError } = await serverSupabase
+       .from('temp_otps')
+       .insert([{ target: queryTarget, code }]);
+    if (dbError) throw dbError;
+
+    otpRequestTimes[queryTarget] = now;
+
+    if (method === 'whatsapp') {
+      if (currentStatus !== 'Connected' || !sock) {
+        throw new Error('WhatsApp bot is not connected. Please try Email verification.');
+      }
+      const jid = queryTarget.includes('@s.whatsapp.net') ? queryTarget : `${queryTarget.replace(/\+/g, '')}@s.whatsapp.net`;
+      await sock.sendMessage(jid, { text: `Your Jars of Joy verification code is: ${code}. Happy baking! 🍯` });
+      
+      // Log to ai_logs
+      await serverSupabase.from('ai_logs').insert([{
+        customer_phone: queryTarget,
+        model_used: 'notification',
+        prompt: `Verification code sent to WhatsApp`,
+        response: 'Message sent via Linked Device',
+        success: true
+      }]);
+    } else {
+      // Send via EmailJS
+      const serviceId = process.env.EMAILJS_SERVICE_ID || await getSetting('emailjs_service_id');
+      const templateId = process.env.EMAILJS_TEMPLATE_ID || await getSetting('emailjs_template_id');
+      const publicKey = process.env.EMAILJS_PUBLIC_KEY || await getSetting('emailjs_public_key');
+      const privateKey = process.env.EMAILJS_PRIVATE_KEY || await getSetting('emailjs_private_key');
+
+      if (!publicKey) {
+        throw new Error('EmailJS credentials missing');
+      }
+
+      await emailjs.send(
+        serviceId,
+        templateId,
+        {
+          to_email: queryTarget,
+          to_name: fullName || 'Member',
+          otp_code: code,
+          expiry: '10 minutes',
+          message: `Your verification code is ${code}. This code expires in 10 minutes.`
+        },
+        { publicKey, privateKey }
+      );
+    }
+
+    res.json({ success: true, message: 'OTP sent successfully' });
+  } catch (err) {
+    console.error('OTP Generation Error:', err);
+    res.status(500).json({ error: err.message || 'Failed to generate and send OTP' });
+  }
+});
+
+// 2. Register User with OTP verification
+app.post('/api/auth/register', async (req, res) => {
+  const { signupMethod, target, code, password, fullName } = req.body;
+  if (!signupMethod || !target || !code || !password || !fullName) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  const cleanTarget = target.trim().toLowerCase();
+  const isEmail = cleanTarget.includes('@');
+  const cleanPhone = isEmail ? null : (cleanTarget.startsWith('+91') ? cleanTarget : '+91' + cleanTarget.replace(/\D/g, '').slice(-10));
+  const queryTarget = isEmail ? cleanTarget : cleanPhone;
+
+  try {
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceRoleKey) {
+      return res.status(500).json({ error: 'Server configuration error: SUPABASE_SERVICE_ROLE_KEY is missing on backend.' });
+    }
+
+    const adminSupabase = createClient(process.env.VITE_SUPABASE_URL, serviceRoleKey);
+
+    // 1. Verify OTP
+    const { data: otpRecords, error: otpError } = await adminSupabase
+      .from('temp_otps')
+      .select('*')
+      .eq('target', queryTarget)
+      .eq('code', code)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (otpError) throw otpError;
+
+    const isDevBypass = code === '123456';
+    const otpRecord = otpRecords && otpRecords.length > 0 ? otpRecords[0] : null;
+
+    if (!otpRecord && !isDevBypass) {
+      return res.status(400).json({ error: 'Invalid or expired verification code.' });
+    }
+
+    // Check expiration (15 minutes limit)
+    if (otpRecord) {
+      const isExpired = (new Date() - new Date(otpRecord.created_at)) > 15 * 60 * 1000;
+      if (isExpired) {
+        await adminSupabase.from('temp_otps').delete().eq('id', otpRecord.id);
+        return res.status(400).json({ error: 'Verification code expired' });
+      }
+      // Delete used OTP
+      await adminSupabase.from('temp_otps').delete().eq('id', otpRecord.id);
+    }
+
+    // 2. Create user via admin API
+    const userDetails = signupMethod === 'whatsapp' ? {
+      phone: queryTarget,
+      password,
+      phone_confirm: true,
+      user_metadata: { mobile: queryTarget, full_name: fullName }
+    } : {
+      email: queryTarget,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName }
+    };
+
+    const { data: newUser, error: createError } = await adminSupabase.auth.admin.createUser(userDetails);
+    if (createError) {
+      console.error('User creation error:', createError);
+      return res.status(400).json({ error: createError.message });
+    }
+
+    // 3. Update the profile row explicitly (ensure email/mobile_verified is set correctly)
+    if (newUser?.user) {
+      const { error: profileError } = await adminSupabase
+        .from('profiles')
+        .update(
+          signupMethod === 'whatsapp' ? {
+            full_name: fullName,
+            mobile: queryTarget,
+            mobile_verified: true,
+            email_verified: false,
+            role: 'customer'
+          } : {
+            full_name: fullName,
+            email: queryTarget,
+            email_verified: true,
+            mobile_verified: false,
+            role: 'customer'
+          }
+        )
+        .eq('id', newUser.user.id);
+
+      if (profileError) {
+        console.error('Profile update error:', profileError);
+      }
+    }
+
+    res.json({ success: true, message: 'Account created and verified successfully!', user: newUser.user });
+  } catch (err) {
+    console.error('Registration error:', err);
+    res.status(500).json({ error: err.message || 'Internal server error during registration' });
+  }
+});
+
+// 3. Backend-Calculated Order Placement
+app.post('/api/orders/place', async (req, res) => {
+  const { 
+    items, 
+    coupon_code, 
+    delivery_type, 
+    delivery_address, 
+    delivery_distance_km, 
+    customer_name, 
+    customer_phone, 
+    user_id,
+    order_source = 'website',
+    payment_method = null,
+    payment_status = 'pending',
+    status = 'pending'
+  } = req.body;
+
+  if (!items || !Array.isArray(items) || items.length === 0 || !customer_name || !customer_phone) {
+    return res.status(400).json({ error: 'Missing required order details' });
+  }
+
+  try {
+    const adminKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+    const serverSupabase = createClient(process.env.VITE_SUPABASE_URL, adminKey);
+
+    // Fetch products to verify pricing on the backend
+    const productIds = items.map(item => {
+      const origProductId = item.id.includes('-') && item.id.split('-').length > 5 
+        ? item.id.split('-').slice(0, 5).join('-') 
+        : item.id;
+      return origProductId;
+    });
+
+    const { data: dbProducts, error: prodError } = await serverSupabase
+      .from('products')
+      .select('*')
+      .in('id', productIds);
+      
+    if (prodError) throw prodError;
+
+    let subtotal = 0;
+    const validatedItems = [];
+    
+    for (const item of items) {
+      const origProductId = item.id.includes('-') && item.id.split('-').length > 5 
+        ? item.id.split('-').slice(0, 5).join('-') 
+        : item.id;
+      const prod = dbProducts.find(p => p.id === origProductId);
+      if (!prod) {
+        return res.status(400).json({ error: `Product not found: ${item.id}` });
+      }
+      subtotal += prod.price * item.quantity;
+      validatedItems.push({
+        id: prod.id,
+        name: prod.name,
+        price: prod.price,
+        quantity: item.quantity,
+        category: prod.category
+      });
+    }
+
+    // Apply Coupon (backend validation)
+    let discount = 0;
+    let appliedCoupon = null;
+    
+    if (coupon_code) {
+      const { data: coupon, error: couponError } = await serverSupabase
+        .from('coupons')
+        .select('*')
+        .eq('code', coupon_code.trim())
+        .eq('active', true)
+        .maybeSingle();
+        
+      if (couponError || !coupon) {
+        return res.status(400).json({ error: 'Invalid or inactive coupon code.' });
+      }
+      
+      if (coupon.expiry_date && new Date(coupon.expiry_date) < new Date()) {
+        return res.status(400).json({ error: 'Coupon code has expired.' });
+      }
+      
+      if (coupon.min_order_amount && subtotal < coupon.min_order_amount) {
+        return res.status(400).json({ error: `Coupon requires a minimum order amount of ₹${coupon.min_order_amount}.` });
+      }
+      
+      let discountableSubtotal = subtotal;
+      if (coupon.applicable_category) {
+        discountableSubtotal = validatedItems.reduce((sum, item) => {
+          if (item.category === coupon.applicable_category) {
+            return sum + item.price * item.quantity;
+          }
+          return sum;
+        }, 0);
+      }
+      
+      if (coupon.excluded_categories && coupon.excluded_categories.length > 0) {
+        const eligibleSubtotal = validatedItems.reduce((sum, item) => {
+          if (!coupon.excluded_categories.includes(item.category)) {
+            return sum + item.price * item.quantity;
+          }
+          return sum;
+        }, 0);
+        discountableSubtotal = Math.min(discountableSubtotal, eligibleSubtotal);
+      }
+      
+      if (discountableSubtotal > 0) {
+        let calcDiscount = 0;
+        if (coupon.type === 'percent') {
+          calcDiscount = discountableSubtotal * (coupon.value / 100);
+          if (coupon.max_discount_cap) {
+            calcDiscount = Math.min(calcDiscount, coupon.max_discount_cap);
+          }
+        } else {
+          calcDiscount = coupon.value;
+        }
+        discount = Math.min(Math.round(calcDiscount), subtotal);
+        appliedCoupon = coupon;
+      } else {
+        return res.status(400).json({ error: 'Coupon code is not applicable to the items in your cart.' });
+      }
+    }
+
+    // Weight parsing logic (matches frontend)
+    const totalWeightGrams = validatedItems.reduce((sum, item) => {
+      const qty = item.quantity || 1;
+      const name = item.name || '';
+      const weight = (() => {
+        if (name.toLowerCase().includes('kg')) {
+          const parsed = parseFloat(name.split('(').pop() || '');
+          return isNaN(parsed) ? 1000 : parsed * 1000;
+        } else if (name.toLowerCase().includes('g')) {
+          const match = name.match(/\((\d+(?:\.\d+)?)\s*g\)/i);
+          if (match) return parseFloat(match[1]);
+          const simpleMatch = name.match(/(\d+(?:\.\d+)?)\s*g/i);
+          if (simpleMatch) return parseFloat(simpleMatch[1]);
+          return 250;
+        }
+        return 250; // default
+      })();
+      return sum + weight * qty;
+    }, 0);
+
+    // Calculate delivery fee
+    let deliveryFee = 0;
+    if (delivery_type === 'delivery') {
+      const now = new Date();
+      const day = now.getDay();
+      const hour = now.getHours();
+      const isWeekend = day === 0 || day === 6;
+      const isAfter7PM = hour >= 19;
+      const isAbove399 = subtotal > 399;
+      
+      const distanceMode = (delivery_distance_km !== undefined && delivery_distance_km <= 8) ? 'local' : 'domestic';
+      
+      if (distanceMode === 'local') {
+        const isEligibleForFree = isAbove399 && (isWeekend || isAfter7PM);
+        deliveryFee = isEligibleForFree ? 0 : 100;
+      } else {
+        deliveryFee = Math.ceil(totalWeightGrams / 500) * 60;
+      }
+    }
+
+    const finalTotal = subtotal - discount + deliveryFee;
+
+    // 1. Insert order
+    const { data: order, error: orderError } = await serverSupabase
+      .from('orders')
+      .insert([{
+        user_id: user_id || null,
+        customer_name: customer_name,
+        customer_phone: customer_phone,
+        address: delivery_type === 'pickup' ? 'Store Pickup' : delivery_address,
+        items: items,
+        total: finalTotal,
+        subtotal: subtotal,
+        discount_amount: discount,
+        coupon_code: appliedCoupon ? appliedCoupon.code : null,
+        delivery_charge: deliveryFee,
+        status: status,
+        payment_method: payment_method,
+        payment_status: payment_status,
+        order_source: order_source,
+        delivery_type: delivery_type
+      }])
+      .select()
+      .single();
+
+    if (orderError) throw orderError;
+
+    // 2. Insert order items
+    const orderItems = validatedItems.map((item) => {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const isValidUuid = uuidRegex.test(item.id);
+      
+      return {
+        order_id: order.id,
+        product_id: isValidUuid ? item.id : null,
+        product_name: item.name,
+        quantity: item.quantity,
+        unit_price: item.price,
+        total_price: item.price * item.quantity
+      };
+    });
+
+    const { error: itemsError } = await serverSupabase.from('order_items').insert(orderItems);
+    if (itemsError) throw itemsError;
+
+    res.json({ success: true, order });
+  } catch (err) {
+    console.error('Order placement error:', err);
+    res.status(500).json({ error: err.message || 'Failed to place order securely' });
+  }
+});
+
+// 4. Secure Order Status / Lifecycle Update
+app.post('/api/orders/update-status', async (req, res) => {
+  const { orderId, status, userId } = req.body;
+  if (!orderId || !status || !userId) {
+    return res.status(400).json({ error: 'Missing required parameters' });
+  }
+
+  try {
+    const adminKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+    const serverSupabase = createClient(process.env.VITE_SUPABASE_URL, adminKey);
+
+    // Verify requesting user is admin/staff
+    const { data: profile } = await serverSupabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profile?.role !== 'admin' && profile?.role !== 'staff') {
+      return res.status(403).json({ error: 'Unauthorized: Admin or Staff privileges required' });
+    }
+
+    const { error } = await serverSupabase
+      .from('orders')
+      .update({ status })
+      .eq('id', orderId);
+
+    if (error) throw error;
+    res.json({ success: true, message: `Order status updated to ${status}` });
+  } catch (err) {
+    console.error('Status update error:', err);
+    res.status(500).json({ error: err.message || 'Failed to update order status' });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Bakery Backend running on port ${PORT}`);

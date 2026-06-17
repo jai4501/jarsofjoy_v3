@@ -46,6 +46,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
 
         localStorage.setItem('site_settings', JSON.stringify(settingsMap));
         set({ settings: settingsMap, loading: false, isInitialized: true });
+        
+        // Save business logo dynamically in user local storage cache
+        const businessLogo = settingsMap['business_logo'];
+        if (businessLogo) {
+          fetch(businessLogo, { mode: 'cors' }).catch(() => {});
+        }
       } catch (err) {
         console.error('Error fetching settings:', err);
         set({ loading: false, isInitialized: true });

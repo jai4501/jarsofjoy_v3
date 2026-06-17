@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useCartStore } from '../store/useCartStore';
 import { useToastStore } from '../store/useToastStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -50,36 +50,25 @@ export const Storefront = () => {
   const loading = !isLoaded;
 
   // Dynamic Settings
-  const businessLogo = getSetting('business_logo', '/business_logo_new.jpg');
+  const businessLogo = getSetting('business_logo', '/business_logo_new.webp');
   const businessName = getSetting('business_name', 'Your Business Name');
 
   // Product Selection Modal (Quick View)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [showProductModal, setShowProductModal] = useState(false);
-  const scrollPosition = useRef(0);
 
   // Lock background scroll when modal is open
   useEffect(() => {
     if (showProductModal) {
-      scrollPosition.current = window.scrollY;
-      document.body.style.position = 'fixed';
-      document.body.style.top = `-${scrollPosition.current}px`;
-      document.body.style.width = '100%';
+      document.documentElement.style.overflow = 'hidden';
       document.body.style.overflow = 'hidden';
     } else {
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.width = '';
+      document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
-      if (scrollPosition.current > 0) {
-        window.scrollTo(0, scrollPosition.current);
-        scrollPosition.current = 0;
-      }
     }
     return () => {
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.width = '';
+      document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
     };
   }, [showProductModal]);
@@ -109,6 +98,7 @@ export const Storefront = () => {
 
   const openQuickView = (product: Product) => {
     setSelectedProduct(product);
+    setActiveImageIdx(0);
     setShowProductModal(true);
   };
 
@@ -180,7 +170,16 @@ export const Storefront = () => {
                 variant="outline" 
                 onClick={async () => {
                   addToast('Preparing your visual menu...', 'sweet');
-                  await generateMenuPDF(products as any, { business_logo: businessLogo, business_name: businessName });
+                  await generateMenuPDF(products as any, {
+                    business_name: businessName,
+                    business_logo: businessLogo,
+                    owner_name: getSetting('owner_name', 'Sneha'),
+                    address_full: getSetting('address_full', 'PRK Garden, Cheran Ma Nagar'),
+                    address_city: getSetting('address_city', 'Coimbatore'),
+                    contact_phone: getSetting('contact_phone', '+91 76959 64392'),
+                    fssai_number: getSetting('fssai_number', '22426552000456'),
+                    business_tagline: getSetting('hero_subheading', 'Baking happiness, one jar at a time.')
+                  });
                 }}
                 className="h-14 sm:h-16 px-10 sm:px-12 bg-white/50 backdrop-blur-sm text-xs sm:text-sm font-black uppercase tracking-widest border border-white/40"
               >
@@ -217,7 +216,7 @@ export const Storefront = () => {
                     <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 relative z-10 text-center sm:text-left">
                       <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blush rounded-[1.5rem] sm:rounded-[2rem] flex items-center justify-center overflow-hidden shadow-inner border-2 border-white group-hover:scale-110 transition-transform group-hover:rotate-3 animate-in fade-in duration-500">
                         {(cat as any).image_url ? (
-                          <img src={(cat as any).image_url} className="w-full h-full object-cover" alt={cat.name} />
+                          <img src={(cat as any).image_url} className="w-full h-full object-cover" alt={cat.name} loading="lazy" />
                         ) : (
                           <span className="text-4xl sm:text-5xl">{cat.emoji || getCategoryIcon(cat.name)}</span>
                         )}
@@ -305,7 +304,7 @@ export const Storefront = () => {
                     <div className="premium-card h-full p-4 sm:p-6 group flex flex-col relative text-center hover:-translate-y-1 transition-all duration-500">
                       <div className="relative aspect-square sm:aspect-[4/5] bg-brand/5 rounded-[1.5rem] sm:rounded-[2.5rem] mb-4 sm:mb-6 overflow-hidden shadow-inner">
                         {product.images && product.images[0] ? (
-                          <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+                          <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" loading="lazy" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-5xl sm:text-8xl opacity-10">🍰</div>
                         )}
@@ -361,7 +360,7 @@ export const Storefront = () => {
                               return (
                                 <div className="flex items-center gap-3 bg-brand/5 rounded-full p-1.5 border border-brand/10 h-11 sm:h-14 w-full max-w-[200px] justify-between shadow-inner">
                                   <button 
-                                    onClick={(e) => { e.stopPropagation(); updateQuantity(product.id, -1); }}
+                                    onClick={(e) => { e.stopPropagation(); updateQuantity(product.id, totalQty - 1); }}
                                     className="w-8 h-8 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all shadow-luxury"
                                   >
                                     <Minus size={16} />
@@ -370,7 +369,7 @@ export const Storefront = () => {
                                     {totalQty}
                                   </span>
                                   <button 
-                                    onClick={(e) => { e.stopPropagation(); updateQuantity(product.id, 1); }}
+                                    onClick={(e) => { e.stopPropagation(); updateQuantity(product.id, totalQty + 1); }}
                                     className="w-8 h-8 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all shadow-luxury"
                                   >
                                     <Plus size={16} />
@@ -414,84 +413,144 @@ export const Storefront = () => {
       {/* Product Quick View Modal (Zepto Style) */}
       <AnimatePresence>
         {showProductModal && selectedProduct && (
-          <div 
-            className="fixed inset-0 bg-brand-dark/40 backdrop-blur-md z-[250] flex items-end md:items-center justify-center p-0 md:p-4"
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-brand-dark/45 backdrop-blur-md z-[250] flex items-end md:items-center justify-center p-0 md:p-4"
             onClick={() => setShowProductModal(false)}
           >
             <motion.div 
-              initial={{ y: "100%", opacity: 0 }} 
-              animate={{ y: 0, opacity: 1 }} 
-              exit={{ y: "100%", opacity: 0 }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              initial={{ y: "100%", opacity: 1, scale: 1 }} 
+              animate={{ y: 0, opacity: 1, scale: 1 }} 
+              exit={{ y: "100%", opacity: 1, scale: 1 }}
+              transition={{ type: "tween", ease: [0.215, 0.61, 0.355, 1], duration: 0.3 }}
               drag="y"
-              dragConstraints={{ top: 0 }}
-              dragElastic={0.2}
+              dragConstraints={{ top: 0, bottom: 300 }}
+              dragElastic={{ top: 0, bottom: 0.5 }}
               onDragEnd={(_, info) => {
-                if (info.offset.y > 100) setShowProductModal(false);
+                if (info.offset.y > 80 || info.velocity.y > 300) setShowProductModal(false);
               }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white w-full max-w-4xl rounded-t-[2.5rem] md:rounded-[3rem] shadow-layer-3 border border-brand/5 overflow-hidden flex flex-col md:flex-row relative max-h-[92vh] md:max-h-[85vh] md:h-[540px]"
+              className="bg-white/90 backdrop-blur-2xl w-full max-w-4xl rounded-t-[2.5rem] md:rounded-[3rem] shadow-deep border border-white/60 overflow-hidden flex flex-col md:flex-row relative h-[85vh] md:h-[560px] max-h-[92vh] md:max-h-[85vh]"
             >
+              {/* Elegant Glowing Overlay behind the modal content */}
+              <div className="bg-gradient-to-tr from-brand/5 via-gold/5 to-brand/10 w-96 h-96 rounded-full blur-3xl absolute -bottom-20 -left-20 pointer-events-none -z-10" />
+
               {/* Drag Handle (Mobile Only) */}
               <div className="w-12 h-1.5 bg-brand/10 rounded-full mx-auto mt-4 mb-2 md:hidden" />
 
+              {/* Frosted Close Button - Floating on top-left of image area on desktop, top-right on mobile */}
               <button 
                 onClick={() => setShowProductModal(false)} 
-                className="absolute top-4 right-4 md:top-6 md:right-6 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md text-brand flex items-center justify-center hover:bg-brand hover:text-white transition-all shadow-soft z-[110] border border-brand/5 cursor-pointer"
+                className="absolute top-4 right-4 md:top-6 md:left-6 md:right-auto w-10 h-10 rounded-full luxury-glass text-brand hover:scale-110 active:scale-95 transition-all flex items-center justify-center cursor-pointer shadow-medium z-[120]"
+                title="Close"
               >
-                <X size={18} />
+                <X size={20} />
               </button>
 
-              {/* Image Section */}
-              <div className="w-full md:w-1/2 h-72 md:h-full bg-brand/5 relative overflow-hidden flex-shrink-0">
-                 {selectedProduct.images && selectedProduct.images[0] ? (
-                   <img src={selectedProduct.images[0]} className="w-full h-full object-cover" alt={selectedProduct.name} />
-                 ) : (
-                   <div className="w-full h-full flex items-center justify-center text-7xl opacity-10">🍰</div>
-                 )}
+              {/* Frosted Favorite Button - Floating on top-right of image area */}
+              <button
+                onClick={() => toggleFavorite(selectedProduct.id)}
+                className="absolute top-4 left-4 md:top-6 md:right-6 md:left-auto w-10 h-10 rounded-full luxury-glass flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-medium cursor-pointer z-[120]"
+                title={favorites.includes(selectedProduct.id) ? "Remove from Favorites" : "Add to Favorites"}
+              >
+                <Heart 
+                  size={18} 
+                  className={favorites.includes(selectedProduct.id) ? 'fill-red-500 stroke-red-500 text-red-500 animate-heartbeat' : 'text-brand'} 
+                />
+              </button>
+
+              {/* Image Section / Gallery */}
+              <div className="w-full md:w-1/2 h-72 md:h-full bg-brand/5 relative overflow-hidden flex-shrink-0 flex items-center justify-center">
+                 {/* Main Image View */}
+                 <div className="w-full h-full relative">
+                   <AnimatePresence mode="wait">
+                     <motion.img 
+                       key={activeImageIdx}
+                       initial={{ opacity: 0, scale: 1.05 }}
+                       animate={{ opacity: 1, scale: 1 }}
+                       exit={{ opacity: 0, scale: 0.95 }}
+                       transition={{ duration: 0.3 }}
+                       src={selectedProduct.images?.[activeImageIdx]} 
+                       className="w-full h-full object-cover" 
+                       alt={selectedProduct.name} 
+                     />
+                   </AnimatePresence>
+
+                   {/* Transparent white gradient shadow overlay at the bottom */}
+                   <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
+
+                   {/* Multiple Images Thumbnail Indicator */}
+                   {selectedProduct.images && selectedProduct.images.length > 1 && (
+                     <div className="absolute bottom-4 inset-x-0 flex justify-center gap-2 z-[110]">
+                       {selectedProduct.images.map((imgUrl, imgIdx) => (
+                         <button
+                           key={imgIdx}
+                           onClick={() => setActiveImageIdx(imgIdx)}
+                           className={`w-12 h-12 rounded-xl overflow-hidden border-2 transition-all shadow-md hover:scale-110 ${activeImageIdx === imgIdx ? 'border-brand bg-white scale-105' : 'border-white/50 bg-white/30 backdrop-blur-sm'}`}
+                         >
+                           <img src={imgUrl} className="w-full h-full object-cover" alt="" />
+                         </button>
+                       ))}
+                     </div>
+                   )}
+                 </div>
+
+                 {/* Custom Float Badges */}
+                 <div className="absolute bottom-4 left-4 flex flex-col gap-1.5 z-20">
+                   <span className="glass-pill !px-3 !py-1 text-[8px] font-black uppercase tracking-widest text-brand-dark shadow-sm bg-white/70 backdrop-blur-sm border border-white/50">
+                     {selectedProduct.category}
+                   </span>
+                 </div>
               </div>
 
               {/* Info Section */}
-              <div className="w-full md:w-1/2 p-6 md:p-10 flex flex-col bg-white h-full justify-between overflow-y-auto no-scrollbar">
-                <div className="space-y-4">
+              <div className="w-full md:w-1/2 p-6 md:p-10 flex flex-col bg-white/95 backdrop-blur-md flex-1 min-h-0 md:h-full justify-between overflow-y-auto no-scrollbar">
+                <div className="space-y-6">
+                  {/* Category, Rating, Stock Status */}
                   <div className="flex items-center justify-between">
-                    <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] sm:text-[9px] opacity-60">{selectedProduct.category}</p>
-                    <button
-                      onClick={() => toggleFavorite(selectedProduct.id)}
-                      className="w-8 h-8 rounded-full border border-brand/10 flex items-center justify-center hover:scale-105 transition-all shadow-sm cursor-pointer"
-                      title={favorites.includes(selectedProduct.id) ? "Remove from Favorites" : "Add to Favorites"}
-                    >
-                      <Heart 
-                        size={14} 
-                        className={favorites.includes(selectedProduct.id) ? 'fill-red-500 stroke-red-500 text-red-500' : 'text-brand'} 
-                      />
-                    </button>
+                     <span className="text-brand font-black uppercase tracking-[0.3em] text-[8px] sm:text-[9px] opacity-75">
+                       {selectedProduct.stock_status === 'Out of Stock' ? '🍰 Limited Availability' : '🍰 Freshly Baked Today'}
+                     </span>
+                     {selectedProduct.stock_status === 'Out of Stock' && (
+                       <span className="bg-red-50 text-red-500 border border-red-100 text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full">
+                         Sold Out
+                       </span>
+                     )}
                   </div>
                   
-                  <div className="space-y-2">
-                    <h3 className="text-2xl md:text-3xl font-black text-brand-dark tracking-tight leading-tight heading-serif">{selectedProduct.name}</h3>
-                    <div className="flex items-center gap-4">
-                      <p className="text-xl md:text-2xl font-black text-brand tracking-tighter">₹{selectedProduct.price}</p>
-                      <div className="h-4 w-px bg-brand/10" />
-                      <p className="text-[9px] font-bold text-brand-dark/40 uppercase tracking-widest">Premium Quality</p>
+                  {/* Title & Price */}
+                  <div className="space-y-2.5">
+                    <h2 className="text-2xl md:text-3.5xl font-black text-brand-dark tracking-tight leading-tight heading-serif">
+                      {selectedProduct.name}
+                    </h2>
+                    <div className="flex items-center gap-3">
+                      <div className="bg-brand/5 border border-brand/10 rounded-2xl px-4 py-1 flex items-center justify-center">
+                        <span className="text-xl md:text-2xl font-black text-brand tracking-tighter">₹{selectedProduct.price}</span>
+                      </div>
+                      <span className="text-[9px] font-black text-brand-dark/30 uppercase tracking-[0.2em]">Inclusive of all taxes</span>
                     </div>
                   </div>
 
-                  <p className="text-brand-dark/70 font-medium leading-relaxed text-xs sm:text-sm italic border-l-2 border-brand/15 pl-3 py-1">
-                    "{selectedProduct.description || "Indulge in this handcrafted masterpiece made with passion and the finest ingredients."}"
-                  </p>
+                  {/* Description Premium Block */}
+                  <div className="fluid-glass !rounded-2xl p-4 border-l-4 border-brand shadow-sm bg-brand/5">
+                    <p className="text-brand-dark/80 font-semibold leading-relaxed text-xs sm:text-sm italic">
+                      "{selectedProduct.description || "Indulge in this handcrafted masterpiece made with passion and the finest ingredients."}"
+                    </p>
+                  </div>
                 </div>
 
                 {/* Variations & Options */}
-                <div className="flex-1 overflow-y-auto no-scrollbar py-6">
+                <div className="py-4 shrink-0">
                   {selectedProduct.variations && (selectedProduct.variations as any).length > 0 && (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between border-b border-brand/5 pb-2">
-                        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-brand-dark/65">Select your preference</p>
-                        <p className="text-[9px] font-bold text-brand italic">Scroll for sizes →</p>
+                        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-brand-dark/50">Select Size & Portion</p>
+                        <p className="text-[9px] font-bold text-brand italic">Swipe for options ➔</p>
                       </div>
                       
-                      <div className="flex overflow-x-auto no-scrollbar gap-3 pb-2 -mx-2 px-2 snap-x">
+                      <div className="flex overflow-x-auto no-scrollbar gap-3.5 pb-2 -mx-2 px-2 snap-x">
                         {(selectedProduct.variations as any).map((v: any, idx: number) => {
                           const variationId = `${selectedProduct.id}-${v.name}`;
                           const cartItem = items.find(i => i.id === variationId);
@@ -502,10 +561,10 @@ export const Storefront = () => {
                               key={idx}
                               whileTap={{ scale: 0.95 }}
                               animate={qty > 0 ? { scale: [1, 1.02, 1], transition: { duration: 0.2 } } : {}}
-                              className={`shrink-0 w-32 p-4 rounded-[1.5rem] border-2 transition-all snap-start flex flex-col items-center text-center gap-3 ${qty > 0 ? 'bg-brand/10 border-brand shadow-luxury' : 'bg-brand/5 border-transparent hover:border-brand/20 hover:bg-white shadow-soft'}`}
+                              className={`shrink-0 w-36 p-5 rounded-[2rem] border-2 transition-all snap-start flex flex-col justify-between items-center text-center gap-4 ${qty > 0 ? 'bg-brand/10 border-brand shadow-luxury' : 'bg-brand/5 border-transparent hover:border-brand/20 hover:bg-white shadow-soft'}`}
                             >
-                              <div className="space-y-0.5 mt-1">
-                                <p className="font-black text-brand-dark text-xs tracking-tight">{v.name}</p>
+                              <div className="space-y-1 mt-1">
+                                <p className="font-black text-brand-dark text-xs tracking-tight uppercase">{v.name}</p>
                                 <p className="font-black text-brand text-sm tracking-tighter">₹{v.price}</p>
                               </div>
                               
@@ -513,18 +572,18 @@ export const Storefront = () => {
                                 <motion.div 
                                   initial={{ opacity: 0, y: 5 }}
                                   animate={{ opacity: 1, y: 0 }}
-                                  className="flex items-center gap-2 bg-white rounded-lg p-1 border border-brand/10 h-8 w-full justify-between mt-1 shadow-sm"
+                                  className="flex items-center gap-2 bg-white rounded-xl p-1 border border-brand/10 h-9 w-full justify-between shadow-sm"
                                 >
                                   <button 
-                                    onClick={() => updateQuantity(variationId, -1)}
-                                    className="w-6 h-6 bg-brand/5 rounded-md flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                                    onClick={() => updateQuantity(variationId, qty - 1)}
+                                    className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
                                   >
                                     <Minus size={10} />
                                   </button>
-                                  <span className="font-black text-brand text-xs w-4">{qty}</span>
+                                  <span className="font-black text-brand text-xs w-4 text-center">{qty}</span>
                                   <button 
-                                    onClick={() => updateQuantity(variationId, 1)}
-                                    className="w-6 h-6 bg-brand/5 rounded-md flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                                    onClick={() => updateQuantity(variationId, qty + 1)}
+                                    className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
                                   >
                                     <Plus size={10} />
                                   </button>
@@ -533,7 +592,7 @@ export const Storefront = () => {
                                 <button
                                   onClick={() => handleAddToCart(selectedProduct, v)}
                                   disabled={selectedProduct.stock_status === 'Out of Stock'}
-                                  className="w-full h-8 bg-brand text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm hover:scale-105 active:scale-95 transition-all mt-1 cursor-pointer"
+                                  className="w-full h-9 bg-brand text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-md hover:bg-brand-dark hover:scale-105 active:scale-95 transition-all cursor-pointer disabled:bg-gray-200 disabled:text-brand-dark/30 disabled:scale-100"
                                 >
                                   Select
                                 </button>
@@ -553,19 +612,19 @@ export const Storefront = () => {
                       const qty = items.find(i => i.id === selectedProduct.id)?.quantity || 0;
                       if (qty > 0) {
                         return (
-                          <div className="flex items-center justify-between bg-brand/5 border border-brand/10 rounded-2xl p-1.5 h-14 shadow-inner">
+                          <div className="flex items-center justify-between bg-brand/5 border border-brand/10 rounded-[1.5rem] p-1.5 h-14 shadow-inner">
                             <span className="text-[10px] font-black text-brand-dark/40 uppercase tracking-[0.2em] pl-3">Added to Jar</span>
                             <div className="flex items-center gap-3 bg-white rounded-xl p-1 shadow-sm border border-brand/5">
                               <button 
-                                onClick={() => updateQuantity(selectedProduct.id, -1)}
-                                className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                                onClick={() => updateQuantity(selectedProduct.id, qty - 1)}
+                                className="w-8 h-8 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
                               >
                                 <Minus size={12} />
                               </button>
                               <span className="font-black text-brand text-sm w-4 text-center">{qty}</span>
                               <button 
-                                onClick={() => updateQuantity(selectedProduct.id, 1)}
-                                className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                                onClick={() => updateQuantity(selectedProduct.id, qty + 1)}
+                                className="w-8 h-8 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
                               >
                                 <Plus size={12} />
                               </button>
@@ -578,7 +637,7 @@ export const Storefront = () => {
                         <Button3D 
                           onClick={() => handleAddToCart(selectedProduct)} 
                           disabled={selectedProduct.stock_status === 'Out of Stock'}
-                          className="w-full h-12 sm:h-14 text-xs sm:text-sm uppercase tracking-widest font-black"
+                          className="w-full h-12 sm:h-14 text-xs sm:text-sm uppercase tracking-widest font-black rounded-xl"
                         >
                           Add to Jar <ShoppingCart className="ml-2" size={14} />
                         </Button3D>
@@ -588,14 +647,14 @@ export const Storefront = () => {
                 )}
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
       {/* Footer */}
       <footer className="container mx-auto px-6 py-20 mt-20 border-t border-brand/5 text-center">
         <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-soft border border-brand/5 overflow-hidden">
-           {businessLogo ? <img src={businessLogo} className="w-full h-full object-cover opacity-60" alt="Footer Logo" /> : <Utensils className="text-brand opacity-20" size={32} />}
+           {businessLogo ? <img src={businessLogo} className="w-full h-full object-cover opacity-60" alt="Footer Logo" loading="lazy" /> : <Utensils className="text-brand opacity-20" size={32} />}
         </div>
         <h2 className="heading-cursive text-4xl text-brand mb-4">{businessName}</h2>
         <p className="font-bold text-brand-dark/65 text-[10px] uppercase tracking-widest">

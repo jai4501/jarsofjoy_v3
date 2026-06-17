@@ -13,7 +13,7 @@ export const ToastContainer = () => {
   };
 
   return (
-    <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-3 pointer-events-none">
+    <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[999] flex flex-col items-center gap-3 pointer-events-none">
       <AnimatePresence>
         {toasts.map((toast) => (
           <motion.div

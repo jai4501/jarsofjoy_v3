@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ShoppingCart, ChevronRight, Heart, Camera, Phone, MapPin, 
@@ -188,7 +188,7 @@ export const Home = () => {
   const { addToast } = useToastStore();
   
   // Dynamic Settings
-  const businessLogo = getSetting('business_logo', '/business_logo_new.jpg');
+  const businessLogo = getSetting('business_logo', '/business_logo_new.webp');
   const businessName = getSetting('business_name', 'Jars of Joy');
   const businessAddress = getSetting('address_full', 'Coimbatore, Tamil Nadu');
   const businessCity = getSetting('address_city', 'Coimbatore');
@@ -218,31 +218,20 @@ export const Home = () => {
 
   // Modal State
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [showProductModal, setShowProductModal] = useState(false);
-  const scrollPosition = useRef(0);
 
   // Lock background scroll when modal open
   useEffect(() => {
     if (showProductModal) {
-      scrollPosition.current = window.scrollY;
-      document.body.style.position = 'fixed';
-      document.body.style.top = `-${scrollPosition.current}px`;
-      document.body.style.width = '100%';
+      document.documentElement.style.overflow = 'hidden';
       document.body.style.overflow = 'hidden';
     } else {
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.width = '';
+      document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
-      if (scrollPosition.current > 0) {
-        window.scrollTo(0, scrollPosition.current);
-        scrollPosition.current = 0;
-      }
     }
     return () => {
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.width = '';
+      document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
     };
   }, [showProductModal]);
@@ -269,6 +258,7 @@ export const Home = () => {
 
   const openQuickView = (product: any) => {
     setSelectedProduct(product);
+    setActiveImageIdx(0);
     setShowProductModal(true);
   };
 
@@ -302,7 +292,7 @@ export const Home = () => {
       >
         <div className="relative aspect-square bg-blush/10 rounded-[20px] overflow-hidden mb-4">
           {product.images && product.images[0] ? (
-            <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+            <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" loading="lazy" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-5xl opacity-10">🍰</div>
           )}
@@ -335,14 +325,14 @@ export const Home = () => {
             {totalQty > 0 && !hasVariations ? (
               <div className="flex items-center justify-between bg-brand/5 rounded-full p-1 border border-brand/10 w-full h-10 shadow-inner">
                 <button 
-                  onClick={(e) => { e.stopPropagation(); updateQuantity(product.id, -1); }}
+                  onClick={(e) => { e.stopPropagation(); updateQuantity(product.id, totalQty - 1); }}
                   className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all shadow-sm"
                 >
                   <Minus size={14} />
                 </button>
                 <span className="font-black text-brand text-sm">{totalQty}</span>
                 <button 
-                  onClick={(e) => { e.stopPropagation(); updateQuantity(product.id, 1); }}
+                  onClick={(e) => { e.stopPropagation(); updateQuantity(product.id, totalQty + 1); }}
                   className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all shadow-sm"
                 >
                   <Plus size={14} />
@@ -369,26 +359,22 @@ export const Home = () => {
   };
 
   // Dynamic categories metadata built from database categories
-  const categoryMeta: Record<string, { subtitle: string; description: string; fallbackImage: string }> = {
+  const categoryMeta: Record<string, { subtitle: string; description: string }> = {
     'brownies': {
       subtitle: 'Rich, fudgy and handcrafted.',
-      description: 'Indulge in our signature chocolate brownies, baked with the finest cacao for a perfect fudgy center and a delicate paper-thin crinkle top.',
-      fallbackImage: '/category_brownie.png'
+      description: 'Indulge in our signature chocolate brownies, baked with the finest cacao for a perfect fudgy center and a delicate paper-thin crinkle top.'
     },
     'tea cakes': {
       subtitle: 'Perfect with your evening coffee.',
-      description: 'Soft, butter-rich, and comforting. Our artisanal tea cakes are the perfect companion for your quiet coffee moments or cozy gatherings.',
-      fallbackImage: '/category_tea_cake.png'
+      description: 'Soft, butter-rich, and comforting. Our artisanal tea cakes are the perfect companion for your quiet coffee moments or cozy gatherings.'
     },
     'cookies': {
       subtitle: 'Freshly baked and packed with flavor.',
-      description: 'Crisp on the edges, chewy in the center, and packed with gourmet chocolate chunks. A pure, handcrafted bite of happiness.',
-      fallbackImage: '/category_cookie.png'
+      description: 'Crisp on the edges, chewy in the center, and packed with gourmet chocolate chunks. A pure, handcrafted bite of happiness.'
     },
     'celebration cakes': {
       subtitle: 'Custom-made for every special moment.',
-      description: 'Artisanal cakes made fresh to order. Styled with premium buttercream and elegant finishes to make your milestones truly unforgettable.',
-      fallbackImage: '/category_celebration_cake.png'
+      description: 'Artisanal cakes made fresh to order. Styled with premium buttercream and elegant finishes to make your milestones truly unforgettable.'
     }
   };
 
@@ -472,7 +458,7 @@ export const Home = () => {
                   <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full p-1.5 bg-gradient-to-tr from-gold via-white to-gold shadow-md">
                     <div className="w-full h-full rounded-full overflow-hidden bg-white border-4 border-white">
                       {businessLogo ? (
-                        <img src={businessLogo} className="w-full h-full object-cover" alt="Sneha - Jars of Joy" />
+                        <img src={businessLogo} className="w-full h-full object-cover" alt="Sneha - Jars of Joy" loading="lazy" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-4xl bg-brand/10">👩‍🍳</div>
                       )}
@@ -604,10 +590,9 @@ export const Home = () => {
 
               const meta = categoryMeta[metaKey] || {
                 subtitle: 'Handcrafted and freshly baked.',
-                description: `Explore our premium selection of fresh ${cat.name.toLowerCase()}, baked with care and the finest ingredients.`,
-                fallbackImage: '/category_swiss_roll.png'
+                description: `Explore our premium selection of fresh ${cat.name.toLowerCase()}, baked with care and the finest ingredients.`
               };
-              const catImage = (cat as any).image_url || meta.fallbackImage;
+              const catImage = (cat as any).image_url;
 
               return (
                 <motion.div 
@@ -625,13 +610,16 @@ export const Home = () => {
                   </div>
 
                   {/* Category Image */}
-                  <div className="w-full aspect-[16/9] sm:aspect-[21/9] rounded-[2.5rem] overflow-hidden shadow-medium border border-white/50 relative group">
-                    <img 
-                      src={catImage} 
-                      alt={cat.name} 
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
-                    />
-                  </div>
+                  {catImage && (
+                    <div className="w-full aspect-[16/9] sm:aspect-[21/9] rounded-[2.5rem] overflow-hidden shadow-medium border border-white/50 relative group">
+                      <img 
+                        src={catImage} 
+                        alt={cat.name} 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
 
                   {/* Category Description & Button */}
                   <div className="max-w-2xl space-y-6 flex flex-col items-center">
@@ -693,7 +681,7 @@ export const Home = () => {
       {/* Footer */}
       <footer className="pt-10 pb-28 sm:pb-12 px-6 text-center bg-brand-dark text-white rounded-t-[32px] mt-10 relative z-10">
         <div className="w-20 h-20 bg-white/10 backdrop-blur-xl rounded-[24px] flex items-center justify-center mx-auto mb-8 border border-white/10 shadow-deep overflow-hidden">
-           {businessLogo ? <img src={businessLogo} className="w-full h-full object-cover opacity-80" alt="Footer Logo" /> : <div className="text-2xl">🍯</div>}
+           {businessLogo ? <img src={businessLogo} className="w-full h-full object-cover opacity-80" alt="Footer Logo" loading="lazy" /> : <div className="text-2xl">🍯</div>}
         </div>
         <h2 className="heading-cursive text-4xl sm:text-5xl text-blush mb-4">{businessName}</h2>
         <p className="text-white/80 font-black tracking-widest text-[8px] sm:text-[10px] uppercase mb-10">Handmade with love in <span className="text-white font-extrabold">{businessCity}</span></p>
@@ -729,84 +717,144 @@ export const Home = () => {
       {/* Product Quick View Modal (Zepto Style) */}
       <AnimatePresence>
         {showProductModal && selectedProduct && (
-          <div 
-            className="fixed inset-0 bg-brand-dark/40 backdrop-blur-md z-[250] flex items-end md:items-center justify-center p-0 md:p-4"
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-brand-dark/45 backdrop-blur-md z-[250] flex items-end md:items-center justify-center p-0 md:p-4"
             onClick={() => setShowProductModal(false)}
           >
             <motion.div 
-              initial={{ y: "100%", opacity: 0 }} 
-              animate={{ y: 0, opacity: 1 }} 
-              exit={{ y: "100%", opacity: 0 }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              initial={{ y: "100%", opacity: 1, scale: 1 }} 
+              animate={{ y: 0, opacity: 1, scale: 1 }} 
+              exit={{ y: "100%", opacity: 1, scale: 1 }}
+              transition={{ type: "tween", ease: [0.215, 0.61, 0.355, 1], duration: 0.3 }}
               drag="y"
-              dragConstraints={{ top: 0 }}
-              dragElastic={0.2}
+              dragConstraints={{ top: 0, bottom: 300 }}
+              dragElastic={{ top: 0, bottom: 0.5 }}
               onDragEnd={(_, info) => {
-                if (info.offset.y > 100) setShowProductModal(false);
+                if (info.offset.y > 80 || info.velocity.y > 300) setShowProductModal(false);
               }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white w-full max-w-4xl rounded-t-[2.5rem] md:rounded-[3rem] shadow-layer-3 border border-brand/5 overflow-hidden flex flex-col md:flex-row relative max-h-[92vh] md:max-h-[85vh] md:h-[540px]"
+              className="bg-white/90 backdrop-blur-2xl w-full max-w-4xl rounded-t-[2.5rem] md:rounded-[3rem] shadow-deep border border-white/60 overflow-hidden flex flex-col md:flex-row relative h-[85vh] md:h-[560px] max-h-[92vh] md:max-h-[85vh]"
             >
+              {/* Elegant Glowing Overlay behind the modal content */}
+              <div className="bg-gradient-to-tr from-brand/5 via-gold/5 to-brand/10 w-96 h-96 rounded-full blur-3xl absolute -bottom-20 -left-20 pointer-events-none -z-10" />
+
               {/* Drag Handle (Mobile Only) */}
               <div className="w-12 h-1.5 bg-brand/10 rounded-full mx-auto mt-4 mb-2 md:hidden" />
 
+              {/* Frosted Close Button - Floating on top-left of image area on desktop, top-right on mobile */}
               <button 
                 onClick={() => setShowProductModal(false)} 
-                className="absolute top-4 right-4 md:top-6 md:right-6 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md text-brand flex items-center justify-center hover:bg-brand hover:text-white transition-all shadow-soft z-[110] border border-brand/5 cursor-pointer"
+                className="absolute top-4 right-4 md:top-6 md:left-6 md:right-auto w-10 h-10 rounded-full luxury-glass text-brand hover:scale-110 active:scale-95 transition-all flex items-center justify-center cursor-pointer shadow-medium z-[120]"
+                title="Close"
               >
-                <X size={18} />
+                <X size={20} />
               </button>
 
-              {/* Image Section */}
-              <div className="w-full md:w-1/2 h-72 md:h-full bg-brand/5 relative overflow-hidden flex-shrink-0">
-                 {selectedProduct.images && selectedProduct.images[0] ? (
-                   <img src={selectedProduct.images[0]} className="w-full h-full object-cover" alt={selectedProduct.name} />
-                 ) : (
-                   <div className="w-full h-full flex items-center justify-center text-7xl opacity-10">🍰</div>
-                 )}
+              {/* Frosted Favorite Button - Floating on top-right of image area */}
+              <button
+                onClick={() => toggleFavorite(selectedProduct.id)}
+                className="absolute top-4 left-4 md:top-6 md:right-6 md:left-auto w-10 h-10 rounded-full luxury-glass flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-medium cursor-pointer z-[120]"
+                title={favorites.includes(selectedProduct.id) ? "Remove from Favorites" : "Add to Favorites"}
+              >
+                <Heart 
+                  size={18} 
+                  className={favorites.includes(selectedProduct.id) ? 'fill-red-500 stroke-red-500 text-red-500 animate-heartbeat' : 'text-brand'} 
+                />
+              </button>
+
+              {/* Image Section / Gallery */}
+              <div className="w-full md:w-1/2 h-72 md:h-full bg-brand/5 relative overflow-hidden flex-shrink-0 flex items-center justify-center">
+                 {/* Main Image View */}
+                 <div className="w-full h-full relative">
+                   <AnimatePresence mode="wait">
+                     <motion.img 
+                       key={activeImageIdx}
+                       initial={{ opacity: 0, scale: 1.05 }}
+                       animate={{ opacity: 1, scale: 1 }}
+                       exit={{ opacity: 0, scale: 0.95 }}
+                       transition={{ duration: 0.3 }}
+                       src={selectedProduct.images?.[activeImageIdx]} 
+                       className="w-full h-full object-cover" 
+                       alt={selectedProduct.name} 
+                     />
+                   </AnimatePresence>
+
+                   {/* Transparent white gradient shadow overlay at the bottom */}
+                   <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
+
+                   {/* Multiple Images Thumbnail Indicator */}
+                   {selectedProduct.images && selectedProduct.images.length > 1 && (
+                     <div className="absolute bottom-4 inset-x-0 flex justify-center gap-2 z-[110]">
+                       {selectedProduct.images.map((imgUrl: string, imgIdx: number) => (
+                         <button
+                           key={imgIdx}
+                           onClick={() => setActiveImageIdx(imgIdx)}
+                           className={`w-12 h-12 rounded-xl overflow-hidden border-2 transition-all shadow-md hover:scale-110 ${activeImageIdx === imgIdx ? 'border-brand bg-white scale-105' : 'border-white/50 bg-white/30 backdrop-blur-sm'}`}
+                         >
+                           <img src={imgUrl} className="w-full h-full object-cover" alt="" />
+                         </button>
+                       ))}
+                     </div>
+                   )}
+                 </div>
+
+                 {/* Custom Float Badges */}
+                 <div className="absolute bottom-4 left-4 flex flex-col gap-1.5 z-20">
+                   <span className="glass-pill !px-3 !py-1 text-[8px] font-black uppercase tracking-widest text-brand-dark shadow-sm bg-white/70 backdrop-blur-sm border border-white/50">
+                     {selectedProduct.category}
+                   </span>
+                 </div>
               </div>
 
               {/* Info Section */}
-              <div className="w-full md:w-1/2 p-6 md:p-10 flex flex-col bg-white h-full justify-between overflow-y-auto no-scrollbar">
-                <div className="space-y-4">
+              <div className="w-full md:w-1/2 p-6 md:p-10 flex flex-col bg-white/95 backdrop-blur-md flex-1 min-h-0 md:h-full justify-between overflow-y-auto no-scrollbar">
+                <div className="space-y-6">
+                  {/* Category, Rating, Stock Status */}
                   <div className="flex items-center justify-between">
-                    <p className="text-brand font-black uppercase tracking-[0.4em] text-[8px] sm:text-[9px] opacity-60">{selectedProduct.category}</p>
-                    <button
-                      onClick={() => toggleFavorite(selectedProduct.id)}
-                      className="w-8 h-8 rounded-full border border-brand/10 flex items-center justify-center hover:scale-105 transition-all shadow-sm cursor-pointer"
-                      title={favorites.includes(selectedProduct.id) ? "Remove from Favorites" : "Add to Favorites"}
-                    >
-                      <Heart 
-                        size={14} 
-                        className={favorites.includes(selectedProduct.id) ? 'fill-red-500 stroke-red-500 text-red-500' : 'text-brand'} 
-                      />
-                    </button>
+                     <span className="text-brand font-black uppercase tracking-[0.3em] text-[8px] sm:text-[9px] opacity-75">
+                       {selectedProduct.stock_status === 'Out of Stock' ? '🍰 Limited Availability' : '🍰 Freshly Baked Today'}
+                     </span>
+                     {selectedProduct.stock_status === 'Out of Stock' && (
+                       <span className="bg-red-50 text-red-500 border border-red-100 text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full">
+                         Sold Out
+                       </span>
+                     )}
                   </div>
                   
-                  <div className="space-y-2">
-                    <h3 className="text-2xl md:text-3xl font-black text-brand-dark tracking-tight leading-tight heading-serif">{selectedProduct.name}</h3>
-                    <div className="flex items-center gap-4">
-                      <p className="text-xl md:text-2xl font-black text-brand tracking-tighter">₹{selectedProduct.price}</p>
-                      <div className="h-4 w-px bg-brand/10" />
-                      <p className="text-[9px] font-bold text-brand-dark/40 uppercase tracking-widest">Premium Quality</p>
+                  {/* Title & Price */}
+                  <div className="space-y-2.5">
+                    <h2 className="text-2xl md:text-3.5xl font-black text-brand-dark tracking-tight leading-tight heading-serif">
+                       {selectedProduct.name}
+                    </h2>
+                    <div className="flex items-center gap-3">
+                      <div className="bg-brand/5 border border-brand/10 rounded-2xl px-4 py-1 flex items-center justify-center">
+                        <span className="text-xl md:text-2xl font-black text-brand tracking-tighter">₹{selectedProduct.price}</span>
+                      </div>
+                      <span className="text-[9px] font-black text-brand-dark/30 uppercase tracking-[0.2em]">Inclusive of all taxes</span>
                     </div>
                   </div>
 
-                  <p className="text-brand-dark/70 font-medium leading-relaxed text-xs sm:text-sm italic border-l-2 border-brand/15 pl-3 py-1">
-                    "{selectedProduct.description || "Indulge in this handcrafted masterpiece made with passion and the finest ingredients."}"
-                  </p>
+                  {/* Description Premium Block */}
+                  <div className="fluid-glass !rounded-2xl p-4 border-l-4 border-brand shadow-sm bg-brand/5">
+                    <p className="text-brand-dark/80 font-semibold leading-relaxed text-xs sm:text-sm italic">
+                      "{selectedProduct.description || "Indulge in this handcrafted masterpiece made with passion and the finest ingredients."}"
+                    </p>
+                  </div>
                 </div>
 
                 {/* Variations & Options */}
-                <div className="flex-1 overflow-y-auto no-scrollbar py-6">
+                <div className="py-4 shrink-0">
                   {selectedProduct.variations && (selectedProduct.variations as any).length > 0 && (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between border-b border-brand/5 pb-2">
-                        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-brand-dark/65">Select your preference</p>
-                        <p className="text-[9px] font-bold text-brand italic">Scroll for sizes →</p>
+                        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-brand-dark/50">Select Size & Portion</p>
+                        <p className="text-[9px] font-bold text-brand italic">Swipe for options ➔</p>
                       </div>
                       
-                      <div className="flex overflow-x-auto no-scrollbar gap-3 pb-2 -mx-2 px-2 snap-x">
+                      <div className="flex overflow-x-auto no-scrollbar gap-3.5 pb-2 -mx-2 px-2 snap-x">
                         {(selectedProduct.variations as any).map((v: any, idx: number) => {
                           const variationId = `${selectedProduct.id}-${v.name}`;
                           const cartItem = items.find(i => i.id === variationId);
@@ -817,10 +865,10 @@ export const Home = () => {
                               key={idx}
                               whileTap={{ scale: 0.95 }}
                               animate={qty > 0 ? { scale: [1, 1.02, 1], transition: { duration: 0.2 } } : {}}
-                              className={`shrink-0 w-32 p-4 rounded-[1.5rem] border-2 transition-all snap-start flex flex-col items-center text-center gap-3 ${qty > 0 ? 'bg-brand/10 border-brand shadow-luxury' : 'bg-brand/5 border-transparent hover:border-brand/20 hover:bg-white shadow-soft'}`}
+                              className={`shrink-0 w-36 p-5 rounded-[2rem] border-2 transition-all snap-start flex flex-col justify-between items-center text-center gap-4 ${qty > 0 ? 'bg-brand/10 border-brand shadow-luxury' : 'bg-brand/5 border-transparent hover:border-brand/20 hover:bg-white shadow-soft'}`}
                             >
-                              <div className="space-y-0.5 mt-1">
-                                <p className="font-black text-brand-dark text-xs tracking-tight">{v.name}</p>
+                              <div className="space-y-1 mt-1">
+                                <p className="font-black text-brand-dark text-xs tracking-tight uppercase">{v.name}</p>
                                 <p className="font-black text-brand text-sm tracking-tighter">₹{v.price}</p>
                               </div>
                               
@@ -828,18 +876,18 @@ export const Home = () => {
                                 <motion.div 
                                   initial={{ opacity: 0, y: 5 }}
                                   animate={{ opacity: 1, y: 0 }}
-                                  className="flex items-center gap-2 bg-white rounded-lg p-1 border border-brand/10 h-8 w-full justify-between mt-1 shadow-sm"
+                                  className="flex items-center gap-2 bg-white rounded-xl p-1 border border-brand/10 h-9 w-full justify-between shadow-sm"
                                 >
                                   <button 
-                                    onClick={() => updateQuantity(variationId, -1)}
-                                    className="w-6 h-6 bg-brand/5 rounded-md flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                                    onClick={() => updateQuantity(variationId, qty - 1)}
+                                    className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
                                   >
                                     <Minus size={10} />
                                   </button>
-                                  <span className="font-black text-brand text-xs w-4">{qty}</span>
+                                  <span className="font-black text-brand text-xs w-4 text-center">{qty}</span>
                                   <button 
-                                    onClick={() => updateQuantity(variationId, 1)}
-                                    className="w-6 h-6 bg-brand/5 rounded-md flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                                    onClick={() => updateQuantity(variationId, qty + 1)}
+                                    className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
                                   >
                                     <Plus size={10} />
                                   </button>
@@ -848,7 +896,7 @@ export const Home = () => {
                                 <button
                                   onClick={() => handleAddToCart(selectedProduct, v)}
                                   disabled={selectedProduct.stock_status === 'Out of Stock'}
-                                  className="w-full h-8 bg-brand text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm hover:scale-105 active:scale-95 transition-all mt-1 cursor-pointer"
+                                  className="w-full h-9 bg-brand text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-md hover:bg-brand-dark hover:scale-105 active:scale-95 transition-all cursor-pointer disabled:bg-gray-200 disabled:text-brand-dark/30 disabled:scale-100"
                                 >
                                   Select
                                 </button>
@@ -868,19 +916,19 @@ export const Home = () => {
                       const qty = items.find(i => i.id === selectedProduct.id)?.quantity || 0;
                       if (qty > 0) {
                         return (
-                          <div className="flex items-center justify-between bg-brand/5 border border-brand/10 rounded-2xl p-1.5 h-14 shadow-inner">
+                          <div className="flex items-center justify-between bg-brand/5 border border-brand/10 rounded-[1.5rem] p-1.5 h-14 shadow-inner">
                             <span className="text-[10px] font-black text-brand-dark/40 uppercase tracking-[0.2em] pl-3">Added to Jar</span>
                             <div className="flex items-center gap-3 bg-white rounded-xl p-1 shadow-sm border border-brand/5">
                               <button 
-                                onClick={() => updateQuantity(selectedProduct.id, -1)}
-                                className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                                onClick={() => updateQuantity(selectedProduct.id, qty - 1)}
+                                className="w-8 h-8 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
                               >
                                 <Minus size={12} />
                               </button>
                               <span className="font-black text-brand text-sm w-4 text-center">{qty}</span>
                               <button 
-                                onClick={() => updateQuantity(selectedProduct.id, 1)}
-                                className="w-7 h-7 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
+                                onClick={() => updateQuantity(selectedProduct.id, qty + 1)}
+                                className="w-8 h-8 bg-brand/5 rounded-lg flex items-center justify-center text-brand hover:bg-brand hover:text-white transition-all cursor-pointer"
                               >
                                 <Plus size={12} />
                               </button>
@@ -893,7 +941,7 @@ export const Home = () => {
                         <Button3D 
                           onClick={() => handleAddToCart(selectedProduct)} 
                           disabled={selectedProduct.stock_status === 'Out of Stock'}
-                          className="w-full h-12 sm:h-14 text-xs sm:text-sm uppercase tracking-widest font-black"
+                          className="w-full h-12 sm:h-14 text-xs sm:text-sm uppercase tracking-widest font-black rounded-xl"
                         >
                           Add to Jar <ShoppingCart className="ml-2" size={14} />
                         </Button3D>
@@ -903,7 +951,7 @@ export const Home = () => {
                 )}
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

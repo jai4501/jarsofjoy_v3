@@ -14,7 +14,7 @@ export const Navbar = () => {
   const cartCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
   const businessName = getSetting('business_name', 'Jars of Joy');
-  const businessLogo = getSetting('business_logo', '/business_logo_new.jpg');
+  const businessLogo = getSetting('business_logo', '/business_logo_new.webp');
 
   const [isScrolled, setIsScrolled] = useState(false);
 

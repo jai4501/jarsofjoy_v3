@@ -1,13 +1,70 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingBag, X, Plus, Minus, Trash2, ArrowLeft, Send, CheckCircle2, Copy, MapPin, Truck, HelpCircle, Check, RefreshCw, Edit } from 'lucide-react';
+import { ShoppingBag, X, Plus, Minus, Trash2, ArrowLeft, Send, CheckCircle2, MapPin, Truck, Check, RefreshCw, Edit, Ticket } from 'lucide-react';
 import { useCartStore } from '../store/useCartStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useUserStore } from '../store/useUserStore';
 import { useToastStore } from '../store/useToastStore';
+import { useProductStore } from '../store/useProductStore';
 import { Button3D } from './ui/Button3D';
 import { supabase } from '../lib/supabase';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+const DefaultIcon = L.icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+
+function RecenterMap({ lat, lng }: { lat: number; lng: number }) {
+  const map = useMap();
+  useEffect(() => {
+    if (lat && lng) {
+      map.setView([lat, lng], map.getZoom());
+      setTimeout(() => map.invalidateSize(), 100);
+    }
+  }, [lat, lng, map]);
+  return null;
+}
+
+function MapEvents({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
+function DraggableMarker({ position, onDragEnd }: { position: [number, number]; onDragEnd: (lat: number, lng: number) => void }) {
+  const markerRef = useRef<any>(null);
+  const eventHandlers = useMemo(
+    () => ({
+      dragend() {
+        const marker = markerRef.current;
+        if (marker != null) {
+          const latLng = marker.getLatLng();
+          onDragEnd(latLng.lat, latLng.lng);
+        }
+      },
+    }),
+    [onDragEnd]
+  );
+
+  return (
+    <Marker
+      draggable={true}
+      eventHandlers={eventHandlers}
+      position={position}
+      ref={markerRef}
+      icon={DefaultIcon}
+    />
+  );
+}
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -27,9 +84,332 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [placedOrderId, setPlacedOrderId] = useState('');
+  
+  // Delivery distance zone selection state: 'local' (<= 8km) or 'domestic' (> 8km)
+  const [distanceMode, setDistanceMode] = useState<'local' | 'domestic'>('local');
+  const [calculatedDistance, setCalculatedDistance] = useState<number | null>(null);
+  const [calculatingDistance, setCalculatingDistance] = useState(false);
+
+  // Address search auto-complete states
+  const [addressSearchQuery, setAddressSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchingLocation, setSearchingLocation] = useState(false);
+  const [mapPosition, setMapPosition] = useState<[number, number] | null>(null);
+  const [showMapPicker, setShowMapPicker] = useState(false);
+
+  // Helper to compute straight-line distance if ORS is down
+  const getHaversineDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  const cleanLandmark = (landmark: string | null) => {
+    if (!landmark) return '';
+    return landmark.replace(/\s*\[coords:\s*[-+]?[0-9]*\.?[0-9]+,\s*[-+]?[0-9]*\.?[0-9]+\]/, '');
+  };
+
+  const extractCoords = (landmark: string | null) => {
+    if (!landmark) return null;
+    const match = landmark.match(/\[coords:\s*([-+]?[0-9]*\.?[0-9]+),\s*([-+]?[0-9]*\.?[0-9]+)\]/);
+    if (match) {
+      return {
+        lat: parseFloat(match[1]),
+        lng: parseFloat(match[2])
+      };
+    }
+    return null;
+  };
+
+  const calculateRouteDistance = async (userLat: number, userLng: number) => {
+    setCalculatingDistance(true);
+    try {
+      const studioLat = parseFloat(getSetting('latitude', '11.0168'));
+      const studioLng = parseFloat(getSetting('longitude', '76.9558'));
+      
+      const straightLineKm = getHaversineDistance(studioLat, studioLng, userLat, userLng);
+      
+      // If the straight-line distance is extremely close (e.g. less than 150 meters),
+      // we consider it at the store / 0km distance to avoid routing snap loops.
+      if (straightLineKm < 0.15) {
+        setCalculatedDistance(0);
+        setDistanceMode('local');
+        return;
+      }
+      
+      const apiKey = getSetting('openrouteservice_api_key', '5b3ce3597851110001cf6248d28dbd6d97c34b17bc582496a79893d1'); 
+      const url = `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${apiKey}&start=${studioLng},${studioLat}&end=${userLng},${userLat}`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        const distanceKm = data.features[0].properties.summary.distance / 1000;
+        setCalculatedDistance(distanceKm);
+        setDistanceMode(distanceKm <= 8 ? 'local' : 'domestic');
+      } else {
+        throw new Error('ORS API request failed');
+      }
+    } catch (e) {
+      console.warn('Failed to get ORS route distance, falling back to Haversine:', e);
+      const studioLat = parseFloat(getSetting('latitude', '11.0168'));
+      const studioLng = parseFloat(getSetting('longitude', '76.9558'));
+      const straightLineKm = getHaversineDistance(studioLat, studioLng, userLat, userLng);
+      const routeKm = straightLineKm * 1.3;
+      setCalculatedDistance(routeKm);
+      setDistanceMode(routeKm <= 8 ? 'local' : 'domestic');
+    } finally {
+      setCalculatingDistance(false);
+    }
+  };
+
+  const selectAddress = async (addr: any) => {
+    setSelectedAddressId(addr.id);
+    const cleanedLandmark = cleanLandmark(addr.landmark);
+    const addressStr = `${addr.door_no}, ${addr.street}, ${addr.area}, ${addr.district} - ${addr.pincode}${cleanedLandmark ? ` (Landmark: ${cleanedLandmark})` : ''}`;
+    setDeliveryAddress(addressStr);
+    
+    setCalculatingDistance(true);
+    try {
+      const coords = extractCoords(addr.landmark);
+      if (coords) {
+        await calculateRouteDistance(coords.lat, coords.lng);
+      } else {
+        let lat: number | null = null;
+        let lon: number | null = null;
+        
+        const city = addr.district || getSetting('address_city', 'Coimbatore');
+        
+        // Try Option A: Street, Area, City, Pincode
+        const queryStr = `${addr.street}, ${addr.area}, ${city}, ${addr.pincode}`;
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryStr)}&limit=1`
+        );
+        const data = await response.json();
+        if (data && data[0]) {
+          lat = parseFloat(data[0].lat);
+          lon = parseFloat(data[0].lon);
+        } else {
+          // Try Option B: Area, City
+          const fallbackQuery1 = `${addr.area}, ${city}`;
+          const fallbackResponse = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fallbackQuery1)}&limit=1`
+          );
+          const fallbackData = await fallbackResponse.json();
+          if (fallbackData && fallbackData[0]) {
+            lat = parseFloat(fallbackData[0].lat);
+            lon = parseFloat(fallbackData[0].lon);
+          } else {
+            // Try Option C: Pincode, India (Extremely reliable fallback)
+            const fallbackQuery2 = `${addr.pincode}, India`;
+            const fallbackResponse = await fetch(
+              `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fallbackQuery2)}&limit=1`
+            );
+            const fallbackData = await fallbackResponse.json();
+            if (fallbackData && fallbackData[0]) {
+              lat = parseFloat(fallbackData[0].lat);
+              lon = parseFloat(fallbackData[0].lon);
+            }
+          }
+        }
+        
+        if (lat !== null && lon !== null) {
+          await calculateRouteDistance(lat, lon);
+        } else {
+          throw new Error('All geocoding fallbacks failed');
+        }
+      }
+    } catch (e) {
+      console.warn('Geocoding saved address failed, using default fallback based on pincode:', e);
+      const isCoimbatorePin = addr.pincode && addr.pincode.startsWith('641');
+      if (isCoimbatorePin) {
+        setCalculatedDistance(5);
+        setDistanceMode('local');
+      } else {
+        setCalculatedDistance(200); // 200 km default for out-of-city to trigger domestic Shipping
+        setDistanceMode('domestic');
+      }
+    } finally {
+      setCalculatingDistance(false);
+    }
+  };
+
+  const handleLocationSearch = async (query: string) => {
+    setAddressSearchQuery(query);
+    if (query.trim().length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    setSearchingLocation(true);
+    try {
+      const city = getSetting('address_city', 'Coimbatore');
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city + ', ' + query)}&limit=5&addressdetails=1`
+      );
+      const data = await response.json();
+      setSearchResults(data);
+    } catch (e) {
+      console.error('Geocoding search error:', e);
+    } finally {
+      setSearchingLocation(false);
+    }
+  };
+
+  const handleSelectLocationResult = (result: any) => {
+    const addr = result.address || {};
+    const streetName = addr.road || addr.suburb || addr.neighbourhood || '';
+    const areaName = addr.suburb || addr.village || addr.city_district || '';
+    const postalCode = addr.postcode || '';
+    const dist = addr.district || addr.city || 'Coimbatore';
+    
+    setStreet(streetName);
+    setArea(areaName || result.name || '');
+    setPincode(postalCode);
+    setDistrict(dist);
+    
+    const lat = parseFloat(result.lat);
+    const lon = parseFloat(result.lon);
+    setMapPosition([lat, lon]);
+    setShowMapPicker(true);
+    
+    calculateRouteDistance(lat, lon);
+    setSearchResults([]);
+    setAddressSearchQuery(result.display_name);
+  };
+
+  const handleShowMapPickerDirectly = () => {
+    const studioLat = parseFloat(getSetting('latitude', '11.0168'));
+    const studioLng = parseFloat(getSetting('longitude', '76.9558'));
+    setMapPosition([studioLat, studioLng]);
+    setShowMapPicker(true);
+    handleMapLocationSelect(studioLat, studioLng);
+  };
+
+  const handleMapLocationSelect = async (lat: number, lng: number) => {
+    setMapPosition([lat, lng]);
+    calculateRouteDistance(lat, lng);
+    
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`
+      );
+      if (response.ok) {
+        const result = await response.json();
+        const addr = result.address || {};
+        const streetName = addr.road || addr.suburb || addr.neighbourhood || '';
+        const areaName = addr.suburb || addr.village || addr.city_district || '';
+        const postalCode = addr.postcode || '';
+        const dist = addr.district || addr.city || 'Coimbatore';
+        
+        setStreet(streetName);
+        setArea(areaName || result.name || '');
+        setPincode(postalCode);
+        setDistrict(dist);
+        setAddressSearchQuery(result.display_name || 'Selected Pin Location');
+      }
+    } catch (e) {
+      console.error('Reverse geocoding error:', e);
+    }
+  };
 
   // Local calculation of total amount to fix calculation errors
   const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  // Parse total weight of items in cart
+  const totalWeightGrams = items.reduce((sum, item) => {
+    const qty = item.quantity || 1;
+    const name = item.name || '';
+    const weight = (() => {
+      if (name.toLowerCase().includes('kg')) {
+        const parsed = parseFloat(name.split('(').pop() || '');
+        return isNaN(parsed) ? 1000 : parsed * 1000;
+      } else if (name.toLowerCase().includes('g')) {
+        const match = name.match(/\((\d+(?:\.\d+)?)\s*g\)/i);
+        if (match) return parseFloat(match[1]);
+        const simpleMatch = name.match(/(\d+(?:\.\d+)?)\s*g/i);
+        if (simpleMatch) return parseFloat(simpleMatch[1]);
+        return 250;
+      }
+      return 250; // default to 250g if not specified
+    })();
+    return sum + weight * qty;
+  }, 0);
+
+  // Calculate dynamic delivery fee
+  const getDeliveryFee = () => {
+    if (deliveryType !== 'delivery') return 0;
+    const now = new Date();
+    const day = now.getDay();
+    const hour = now.getHours();
+    const isWeekend = day === 0 || day === 6;
+    const isAfter7PM = hour >= 19;
+    const isAbove399 = total > 399;
+    
+    if (distanceMode === 'local') {
+      const isEligibleForFree = isAbove399 && (isWeekend || isAfter7PM);
+      return isEligibleForFree ? 0 : 100;
+    } else {
+      // 60rs for 500gm, 120rs for 1kg and so on
+      return Math.ceil(totalWeightGrams / 500) * 60;
+    }
+  };
+  const deliveryFee = getDeliveryFee();
+
+  // Coupons / Promo state
+  const [coupons, setCoupons] = useState<any[]>([]);
+  const [promoCode, setPromoCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any | null>(null);
+  const [showCouponModal, setShowCouponModal] = useState(false);
+
+  // Load products list to calculate category-specific discounts
+  const { products } = useProductStore();
+
+  // Reactive discount calculator
+  const discount = appliedCoupon ? (() => {
+    if (appliedCoupon.min_order_amount && total < appliedCoupon.min_order_amount) return 0;
+    
+    let discountableSubtotal = total;
+    if (appliedCoupon.applicable_category) {
+      discountableSubtotal = items.reduce((sum, item) => {
+        const prod = products.find(p => p.id === item.id);
+        if (prod && prod.category === appliedCoupon.applicable_category) {
+          return sum + item.price * item.quantity;
+        }
+        return sum;
+      }, 0);
+    }
+    
+    if (appliedCoupon.excluded_categories && appliedCoupon.excluded_categories.length > 0) {
+      const eligibleSubtotal = items.reduce((sum, item) => {
+        const prod = products.find(p => p.id === item.id);
+        if (prod && !appliedCoupon.excluded_categories.includes(prod.category)) {
+          return sum + item.price * item.quantity;
+        }
+        return sum;
+      }, 0);
+      discountableSubtotal = Math.min(discountableSubtotal, eligibleSubtotal);
+    }
+
+    if (discountableSubtotal <= 0) return 0;
+
+    let calcDiscount;
+    if (appliedCoupon.type === 'percent') {
+      calcDiscount = discountableSubtotal * (appliedCoupon.value / 100);
+      if (appliedCoupon.max_discount_cap) {
+        calcDiscount = Math.min(calcDiscount, appliedCoupon.max_discount_cap);
+      }
+    } else {
+      calcDiscount = appliedCoupon.value;
+    }
+    
+    return Math.min(Math.round(calcDiscount), total);
+  })() : 0;
 
   // User addresses state
   const [addresses, setAddresses] = useState<any[]>([]);
@@ -49,11 +429,9 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const [postOffices, setPostOffices] = useState<string[]>([]);
 
   // Fetch settings info
-  const upiId = getSetting('upi_id', 'jarsofjoy@okaxis');
-  const upiName = getSetting('upi_name', 'Jars of Joy');
   const whatsappNumber = getSetting('whatsapp_number', '+917695964392');
 
-  const fetchUserAddresses = async (userId: string) => {
+  const fetchUserAddresses = async (userId: string, selectId?: string) => {
     const { data } = await (supabase
       .from('addresses') as any)
       .select('*')
@@ -61,13 +439,15 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       .order('is_default', { ascending: false });
     if (data) {
       setAddresses(data);
-      const defaultAddr = data.find((a: any) => a.is_default) || data[0];
-      if (defaultAddr) {
-        setSelectedAddressId(defaultAddr.id);
-        setDeliveryAddress(`${defaultAddr.door_no}, ${defaultAddr.street}, ${defaultAddr.area}, ${defaultAddr.district} - ${defaultAddr.pincode}${defaultAddr.landmark ? ` (Landmark: ${defaultAddr.landmark})` : ''}`);
+      const targetAddr = selectId 
+        ? data.find((a: any) => a.id === selectId) 
+        : (data.find((a: any) => a.is_default) || data[0]);
+      if (targetAddr) {
+        await selectAddress(targetAddr);
       } else {
         setSelectedAddressId('');
         setDeliveryAddress('');
+        setCalculatedDistance(null);
       }
     }
   };
@@ -87,8 +467,52 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
         setSelectedAddressId('');
         setDeliveryAddress('');
       }
+
+      // Fetch active coupons
+      const fetchCoupons = async () => {
+        try {
+          const { data } = await supabase
+            .from('coupons')
+            .select('*')
+            .eq('active', true);
+          if (data) {
+            setCoupons(data);
+          }
+        } catch (err) {
+          console.error('Error fetching active coupons:', err);
+        }
+      };
+      fetchCoupons();
     }
   }, [isOpen, user, profile]);
+
+  // Freeze background body scrolling when the drawer is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
+  // Re-evaluate applied coupon if cart items or total changes
+  useEffect(() => {
+    if (appliedCoupon) {
+      const minAmount = appliedCoupon.min_order_amount || 0;
+      const hasEligibleItems = !appliedCoupon.applicable_category || items.some(item => {
+        const prod = products.find(p => p.id === item.id);
+        return prod?.category === appliedCoupon.applicable_category;
+      });
+
+      if (total < minAmount || !hasEligibleItems || items.length === 0) {
+        setAppliedCoupon(null);
+        addToast('Coupon invalidated due to cart changes.', 'error');
+      }
+    }
+  }, [items, total, appliedCoupon]);
 
   const handlePincodeChange = async (val: string) => {
     const cleanVal = val.replace(/\D/g, '').slice(0, 6);
@@ -118,7 +542,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     }
   };
 
-  const handleEditClick = (addr: any, e: React.MouseEvent) => {
+  const handleEditClick = async (addr: any, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingAddressId(addr.id);
     setAddrLabel(addr.label);
@@ -127,8 +551,32 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     setArea(addr.area);
     setPincode(addr.pincode);
     setDistrict(addr.district || 'Coimbatore');
-    setLandmark(addr.landmark || '');
     setShowAddrForm(true);
+
+    const coords = extractCoords(addr.landmark);
+    if (coords) {
+      setLandmark(cleanLandmark(addr.landmark));
+      setMapPosition([coords.lat, coords.lng]);
+      setShowMapPicker(true);
+    } else {
+      setLandmark(addr.landmark || '');
+      try {
+        const city = getSetting('address_city', 'Coimbatore');
+        const queryStr = `${addr.street}, ${addr.area}, ${city}, ${addr.pincode}`;
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryStr)}&limit=1`
+        );
+        const data = await response.json();
+        if (data && data[0]) {
+          const lat = parseFloat(data[0].lat);
+          const lon = parseFloat(data[0].lon);
+          setMapPosition([lat, lon]);
+          setShowMapPicker(true);
+        }
+      } catch (e) {
+        console.warn('Geocoding edit address failed for map initialization:', e);
+      }
+    }
   };
 
   const handleCancelAddress = () => {
@@ -141,7 +589,11 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     setLandmark('');
     setAddrLabel('Home');
     setPostOffices([]);
+    setAddressSearchQuery('');
+    setSearchResults([]);
     setShowAddrForm(false);
+    setMapPosition(null);
+    setShowMapPicker(false);
   };
 
   const handleSaveAddress = async () => {
@@ -159,6 +611,10 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
     setSavingAddress(true);
     try {
+      const landmarkWithCoords = mapPosition 
+        ? `${landmark.trim() ? landmark.trim() + ' ' : ''}[coords: ${mapPosition[0]}, ${mapPosition[1]}]` 
+        : landmark.trim() || null;
+
       if (editingAddressId) {
         const { error } = await (supabase
           .from('addresses') as any)
@@ -169,20 +625,16 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
             area: area.trim(),
             pincode: pincode.trim(),
             district: district.trim() || 'Coimbatore',
-            landmark: landmark.trim() || null,
+            landmark: landmarkWithCoords,
           })
           .eq('id', editingAddressId);
 
         if (error) throw error;
         addToast('Address updated!', 'sweet');
 
-        // Reset form
+        const savedId = editingAddressId;
         handleCancelAddress();
-
-        // Re-fetch and select
-        await fetchUserAddresses(user.id);
-        const updatedAddrText = `${doorNo.trim()}, ${street.trim()}, ${area.trim()}, ${district.trim() || 'Coimbatore'} - ${pincode.trim()}${landmark.trim() ? ` (Landmark: ${landmark.trim()})` : ''}`;
-        setDeliveryAddress(updatedAddrText);
+        await fetchUserAddresses(user.id, savedId);
       } else {
         // Ensure profile exists first
         const { data: profileCheck } = await supabase
@@ -218,7 +670,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
             pincode: pincode.trim(),
             district: district.trim() || 'Coimbatore',
             state: 'Tamil Nadu',
-            landmark: landmark.trim() || null,
+            landmark: landmarkWithCoords,
             is_default: addresses.length === 0
           }])
           .select()
@@ -228,15 +680,9 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
         addToast('New address added!', 'sweet');
 
-        // Reset form
+        const savedId = data.id;
         handleCancelAddress();
-
-        // Re-fetch and select
-        await fetchUserAddresses(user.id);
-        if (data) {
-          setSelectedAddressId(data.id);
-          setDeliveryAddress(`${data.door_no}, ${data.street}, ${data.area}, ${data.district} - ${data.pincode}${data.landmark ? ` (Landmark: ${data.landmark})` : ''}`);
-        }
+        await fetchUserAddresses(user.id, savedId);
       }
     } catch (err: any) {
       addToast(err.message || 'Failed to save address', 'error');
@@ -245,10 +691,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     }
   };
 
-  const selectAddress = (addr: any) => {
-    setSelectedAddressId(addr.id);
-    setDeliveryAddress(`${addr.door_no}, ${addr.street}, ${addr.area}, ${addr.district} - ${addr.pincode}${addr.landmark ? ` (Landmark: ${addr.landmark})` : ''}`);
-  };
+
 
   const handleQtyChange = (itemId: string, currentQty: number, delta: number) => {
     const nextQty = currentQty + delta;
@@ -259,9 +702,63 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     }
   };
 
-  const copyUpi = () => {
-    navigator.clipboard.writeText(upiId);
-    addToast('UPI ID copied to clipboard!', 'sweet');
+  const handleApplyPromoCode = (codeToApply?: string): boolean => {
+    const code = codeToApply || promoCode;
+    if (!code.trim()) {
+      addToast('Please enter a promo code.', 'error');
+      return false;
+    }
+    
+    const coupon = coupons.find(c => c.code.toUpperCase() === code.trim().toUpperCase());
+    
+    if (!coupon) {
+      addToast('Invalid promo code. Please try another one.', 'error');
+      return false;
+    }
+    
+    if (!coupon.active) {
+      addToast('This coupon is no longer active.', 'error');
+      return false;
+    }
+    
+    const minAmount = coupon.min_order_amount || 0;
+    if (total < minAmount) {
+      addToast(`This coupon requires a minimum order amount of ₹${minAmount}.`, 'error');
+      return false;
+    }
+    
+    if (coupon.applicable_category) {
+      const hasEligibleItems = items.some(item => {
+        const prod = products.find(p => p.id === item.id);
+        return prod?.category === coupon.applicable_category;
+      });
+      if (!hasEligibleItems) {
+        addToast(`This coupon is only applicable to products in the ${coupon.applicable_category} category.`, 'error');
+        return false;
+      }
+    }
+    
+    if (coupon.excluded_categories && coupon.excluded_categories.length > 0) {
+      const allExcluded = items.every(item => {
+        const prod = products.find(p => p.id === item.id);
+        return prod && coupon.excluded_categories.includes(prod.category);
+      });
+      if (allExcluded) {
+        addToast(`This coupon cannot be applied to items in the excluded categories.`, 'error');
+        return false;
+      }
+    }
+    
+    setAppliedCoupon(coupon);
+    setPromoCode(coupon.code);
+    addToast(`Coupon "${coupon.code}" applied!`, 'sweet');
+    return true;
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setPromoCode('');
+    addToast('Coupon removed.', 'sweet');
   };
 
   const handlePlaceOrder = async () => {
@@ -282,48 +779,56 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       addToast('Please enter a valid phone number', 'error');
       return;
     }
-    if (deliveryType === 'delivery' && !deliveryAddress.trim()) {
-      addToast('Please enter a delivery address', 'error');
-      return;
+    if (deliveryType === 'delivery') {
+      if (!deliveryAddress.trim()) {
+        addToast('Please enter a delivery address', 'error');
+        return;
+      }
+      if (calculatingDistance) {
+        addToast('Please wait while we calculate the delivery distance...', 'error');
+        return;
+      }
+      if (calculatedDistance === null) {
+        addToast('Could not calculate delivery distance. Please verify your address details.', 'error');
+        return;
+      }
     }
 
     setSubmitting(true);
     try {
       const addressVal = deliveryType === 'pickup' ? 'Store Pickup' : deliveryAddress;
 
-      // 1. Insert order record into database
-      const { data: order, error: orderError } = await (supabase
-        .from('orders') as any)
-        .insert([{
-          user_id: user?.id || null,
+      // Retrieve backend URL
+      const { data: urlData } = await supabase
+        .from('site_content')
+        .select('value')
+        .eq('key', 'whatsapp_backend_url')
+        .single();
+      const backendUrl = (urlData as any)?.value || `http://${window.location.hostname}:3001`;
+
+      // Place order via backend
+      const response = await fetch(`${backendUrl}/api/orders/place`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: items.map(item => ({ id: item.id, quantity: item.quantity })),
+          coupon_code: appliedCoupon ? appliedCoupon.code : null,
+          delivery_type: deliveryType,
+          delivery_address: addressVal,
+          delivery_distance_km: calculatedDistance,
           customer_name: customerName,
           customer_phone: customerPhone,
-          address: addressVal,
-          items: items,
-          total: total,
-          subtotal: total,
-          status: 'pending',
-          order_source: 'website',
-          delivery_type: deliveryType
-        }])
-        .select()
-        .single();
+          user_id: user?.id || null,
+          order_source: 'website'
+        })
+      });
 
-      if (orderError) throw orderError;
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to place order securely.');
+      }
 
-      // 2. Insert order items
-      const orderItems = items.map((item) => ({
-        order_id: order.id,
-        product_name: item.name,
-        quantity: item.quantity,
-        unit_price: item.price,
-        total_price: item.price * item.quantity
-      }));
-
-      const { error: itemsError } = await (supabase.from('order_items') as any).insert(orderItems);
-      if (itemsError) throw itemsError;
-
-      setPlacedOrderId(order.id);
+      setPlacedOrderId(data.order.id);
       setStep('success');
       clearCart();
       addToast('Order placed successfully!', 'sweet');
@@ -342,6 +847,18 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
     const addressVal = deliveryType === 'pickup' ? 'Store Pickup' : deliveryAddress;
 
+    let discountDetails = '';
+    if (appliedCoupon && discount > 0) {
+      discountDetails = `*Subtotal:* ₹${total}\n*Coupon Applied:* ${appliedCoupon.code} (- ₹${discount})\n`;
+    }
+
+    let deliveryDetails;
+    if (deliveryType === 'delivery') {
+      deliveryDetails = `*Delivery Charge:* ${deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`} (${distanceMode === 'local' ? 'Porter/Self <= 8km' : 'Shiprocket > 8km'})\n`;
+    } else {
+      deliveryDetails = `*Delivery Charge:* Store Pickup (Free)\n`;
+    }
+
     const message = `🍯 *New Storefront Order placed!*\n\n` +
       `*Order ID:* #INV-${orderIdShort}\n` +
       `*Customer Name:* ${customerName}\n` +
@@ -349,7 +866,9 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       `*Delivery Type:* ${deliveryType === 'pickup' ? 'Pickup 🏪' : 'Home Delivery 🚚'}\n` +
       `*Address:* ${addressVal}\n\n` +
       `*Items Ordered:*\n${itemsDetails}\n\n` +
-      `*Total Amount:* ₹${total}\n\n` +
+      discountDetails +
+      deliveryDetails +
+      `*Total Amount:* ₹${total - discount + deliveryFee}\n\n` +
       `Please confirm my order! 💛`;
 
     const cleanedNumber = whatsappNumber.replace(/[^0-9]/g, '');
@@ -376,13 +895,13 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-            className="fixed right-0 top-0 h-full w-full max-w-md bg-gradient-to-b from-[#FFF5F7] to-white z-[200] p-6 sm:p-8 flex flex-col shadow-luxury border-l border-brand/5"
+            className="fixed right-0 top-0 h-full w-full max-w-md bg-gradient-to-b from-[#FFF5F7] to-white z-[200] p-6 sm:p-8 flex flex-col shadow-luxury border-l border-brand/5 overflow-hidden"
           >
             {/* Morphing settle background decorations */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(253,232,236,0.5)_0%,transparent_60%)] pointer-events-none" />
 
             {/* Header section */}
-            <div className="flex justify-between items-center pb-4 border-b border-brand/10 relative z-10">
+            <div className="flex justify-between items-center pb-4 border-b border-brand/10 relative z-10 shrink-0">
               {step === 'checkout' ? (
                 <button
                   onClick={() => setStep('cart')}
@@ -435,53 +954,76 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                         </Button3D>
                       </div>
                     ) : (
-                      items.map((item) => (
-                        <div 
-                          key={item.id} 
-                          className="flex gap-4 items-center bg-white/70 backdrop-blur-sm p-4 rounded-3xl border border-brand/5 shadow-soft hover:shadow-md transition-shadow relative overflow-hidden group"
-                        >
-                          {/* Item Thumbnail */}
-                          <div className="w-16 h-16 bg-brand/5 rounded-2xl flex items-center justify-center text-3xl overflow-hidden shrink-0 border border-brand/5">
-                            {item.images && item.images[0] ? (
-                              <img src={item.images[0]} className="w-full h-full object-cover" alt={item.name} />
-                            ) : (
-                              '🍰'
-                            )}
-                          </div>
-
-                          {/* Item details */}
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-bold text-brand-dark text-sm sm:text-base leading-tight truncate">{item.name}</h4>
-                            <p className="text-brand font-black text-xs sm:text-sm mt-0.5">₹{item.price * item.quantity}</p>
-                            
-                            {/* Counter buttons */}
-                            <div className="flex items-center gap-3 mt-3">
-                              <button 
-                                onClick={() => handleQtyChange(item.id, item.quantity, -1)}
-                                className="w-7 h-7 flex items-center justify-center bg-white hover:bg-brand/5 rounded-lg border border-brand/10 active:scale-90 transition-all shadow-sm"
-                              >
-                                <Minus size={12} className="text-brand-dark/60" />
-                              </button>
-                              <span className="font-bold text-xs text-brand-dark w-5 text-center">{item.quantity}</span>
-                              <button 
-                                onClick={() => handleQtyChange(item.id, item.quantity, 1)}
-                                className="w-7 h-7 flex items-center justify-center bg-white hover:bg-brand/5 rounded-lg border border-brand/10 active:scale-90 transition-all shadow-sm"
-                              >
-                                <Plus size={12} className="text-brand-dark/60" />
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Delete option */}
-                          <button 
-                            onClick={() => removeItem(item.id)}
-                            className="text-brand-dark/30 hover:text-red-500 p-2 rounded-xl hover:bg-red-50 transition-colors shrink-0 self-start sm:self-center"
-                            title="Remove item"
+                      <>
+                        {items.map((item) => (
+                          <div 
+                            key={item.id} 
+                            className="flex gap-4 items-center bg-white/70 backdrop-blur-sm p-4 rounded-3xl border border-brand/5 shadow-soft hover:shadow-md transition-shadow relative overflow-hidden group"
                           >
-                            <Trash2 size={18} />
+                            {/* Item Thumbnail */}
+                            <div className="w-16 h-16 bg-brand/5 rounded-2xl flex items-center justify-center text-3xl overflow-hidden shrink-0 border border-brand/5">
+                              {item.images && item.images[0] ? (
+                                <img src={item.images[0]} className="w-full h-full object-cover" alt={item.name} />
+                              ) : (
+                                '🍰'
+                              )}
+                            </div>
+
+                            {/* Item details */}
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-bold text-brand-dark text-sm sm:text-base leading-tight truncate">{item.name}</h4>
+                              <p className="text-brand font-black text-xs sm:text-sm mt-0.5">₹{item.price * item.quantity}</p>
+                              
+                              {/* Counter buttons */}
+                              <div className="flex items-center gap-3 mt-3">
+                                <button 
+                                  onClick={() => handleQtyChange(item.id, item.quantity, -1)}
+                                  className="w-7 h-7 flex items-center justify-center bg-white hover:bg-brand/5 rounded-lg border border-brand/10 active:scale-90 transition-all shadow-sm"
+                                >
+                                  <Minus size={12} className="text-brand-dark/60" />
+                                </button>
+                                <span className="font-bold text-xs text-brand-dark w-5 text-center">{item.quantity}</span>
+                                <button 
+                                  onClick={() => handleQtyChange(item.id, item.quantity, 1)}
+                                  className="w-7 h-7 flex items-center justify-center bg-white hover:bg-brand/5 rounded-lg border border-brand/10 active:scale-90 transition-all shadow-sm"
+                                >
+                                  <Plus size={12} className="text-brand-dark/60" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Delete option */}
+                            <button 
+                              onClick={() => removeItem(item.id)}
+                              className="text-brand-dark/30 hover:text-red-500 p-2 rounded-xl hover:bg-red-50 transition-colors shrink-0 self-start sm:self-center"
+                              title="Remove item"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        ))}
+
+                        {/* Coupon / Promo Code Button */}
+                        <div className="mt-4 flex justify-between items-center bg-white/60 p-4 rounded-3xl border border-brand/5 shadow-soft relative z-10">
+                          <div className="flex items-center gap-2">
+                            <Ticket className="text-brand" size={16} />
+                            <span className="text-xs font-bold text-brand-dark/80">
+                              {appliedCoupon ? (
+                                <span>Coupon <strong className="text-brand font-black uppercase tracking-wider">{appliedCoupon.code}</strong> Applied</span>
+                              ) : (
+                                "Apply Coupons / Promo Code"
+                              )}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowCouponModal(true)}
+                            className="text-[9px] font-black uppercase tracking-widest bg-brand/5 hover:bg-brand/10 text-brand px-3 py-1.5 rounded-lg border border-brand/10 transition-all font-bold"
+                          >
+                            {appliedCoupon ? "Manage" : "Apply"}
                           </button>
                         </div>
-                      ))
+                      </>
                     )}
                   </motion.div>
                 )}
@@ -556,7 +1098,8 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
                       {/* Address Selection / Creation (conditional) */}
                       {deliveryType === 'delivery' && (
-                        <motion.div 
+                        <>
+                          <motion.div 
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: 'auto' }}
                           className="space-y-3 overflow-hidden"
@@ -609,9 +1152,9 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                                         <p className="text-[10px] text-brand-dark/60 font-medium">
                                           {addr.district} - {addr.pincode}
                                         </p>
-                                        {addr.landmark && (
+                                        {cleanLandmark(addr.landmark) && (
                                           <p className="text-[9px] text-brand/60 font-bold mt-1">
-                                            📍 {addr.landmark}
+                                            📍 {cleanLandmark(addr.landmark)}
                                           </p>
                                         )}
                                       </div>
@@ -649,8 +1192,86 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                                     )}
                                   </div>
 
+                                  {/* Location Search Input */}
+                                  <div className="space-y-1.5 relative z-30">
+                                    <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Search Location / Street Name</label>
+                                    <input
+                                      type="text"
+                                      value={addressSearchQuery}
+                                      onChange={(e) => handleLocationSearch(e.target.value)}
+                                      placeholder="Start typing your street or area..."
+                                      className="w-full h-11 px-3 bg-white border border-brand/10 rounded-xl text-xs font-semibold text-brand-dark focus:outline-none focus:border-brand/40 shadow-sm"
+                                    />
+                                    
+                                    {searchingLocation && (
+                                      <div className="absolute right-3 top-7">
+                                        <RefreshCw className="animate-spin text-brand/60" size={16} />
+                                      </div>
+                                    )}
+
+                                    {/* Search Results Autocomplete Dropdown */}
+                                    {searchResults.length > 0 && (
+                                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-brand/10 rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto pr-1 no-scrollbar divide-y divide-brand/5">
+                                        {searchResults.map((result, idx) => (
+                                          <div
+                                            key={idx}
+                                            onClick={() => handleSelectLocationResult(result)}
+                                            className="p-3 text-xs font-semibold text-brand-dark/80 hover:bg-brand/5 cursor-pointer transition-colors leading-normal"
+                                          >
+                                            {result.display_name}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Map Picker Toggle & Container */}
+                                  <div className="space-y-2 relative z-20">
+                                    <div className="flex justify-between items-center">
+                                      <button
+                                        type="button"
+                                        onClick={showMapPicker ? () => setShowMapPicker(false) : handleShowMapPickerDirectly}
+                                        className="text-[9px] font-black uppercase tracking-widest text-brand hover:underline flex items-center gap-1"
+                                      >
+                                        📍 {showMapPicker ? 'Hide Map Picker' : 'Select / Pin on Map'}
+                                      </button>
+                                    </div>
+
+                                    {showMapPicker && mapPosition && (
+                                      <div className="w-full h-48 rounded-2xl overflow-hidden border border-brand/20 shadow-inner relative z-10">
+                                        <MapContainer
+                                          center={mapPosition}
+                                          zoom={15}
+                                          scrollWheelZoom={false}
+                                          className="h-full w-full"
+                                        >
+                                          <TileLayer
+                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                          />
+                                          <DraggableMarker
+                                            position={mapPosition}
+                                            onDragEnd={handleMapLocationSelect}
+                                          />
+                                          <MapEvents onMapClick={handleMapLocationSelect} />
+                                          <RecenterMap lat={mapPosition[0]} lng={mapPosition[1]} />
+                                        </MapContainer>
+                                        <div className="absolute bottom-2 left-2 right-2 bg-white/95 px-2 py-1 rounded-lg text-[8px] font-bold text-brand-dark/70 border border-brand/10 shadow-sm pointer-events-none text-center">
+                                          💡 Click map or drag pin to select your exact location
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Separator */}
+                                  <div className="relative flex py-1 items-center z-20">
+                                    <div className="flex-grow border-t border-brand/5"></div>
+                                    <span className="flex-shrink mx-3 text-[8px] font-black uppercase tracking-widest text-brand-dark/30">Confirm Address Details</span>
+                                    <div className="flex-grow border-t border-brand/5"></div>
+                                  </div>
+
                                   {/* Label */}
-                                  <div className="space-y-1.5">
+                                  <div className="space-y-1.5 relative z-10">
                                     <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Label (Home, Office...)</label>
                                     <div className="flex gap-2">
                                       {['Home', 'Office', 'Other'].map(l => (
@@ -672,7 +1293,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
                                   {/* Door / Flat No */}
                                   <div className="space-y-1.5">
-                                    <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Door / Flat No</label>
+                                    <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Door / Flat No <span className="text-red-500 font-bold">*</span></label>
                                     <input
                                       type="text"
                                       value={doorNo}
@@ -684,7 +1305,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
                                   {/* Street / Colony */}
                                   <div className="space-y-1.5">
-                                    <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Street / Colony</label>
+                                    <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Street / Colony <span className="text-red-500 font-bold">*</span></label>
                                     <input
                                       type="text"
                                       value={street}
@@ -696,7 +1317,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
                                   {/* Pincode */}
                                   <div className="space-y-1.5">
-                                    <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Pincode (Auto-fills)</label>
+                                    <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Pincode <span className="text-red-500 font-bold">*</span></label>
                                     <input
                                       type="text"
                                       value={pincode}
@@ -709,7 +1330,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
                                   {/* Area / Post Office */}
                                   <div className="space-y-1.5">
-                                    <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Area / Post Office</label>
+                                    <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Area / Post Office <span className="text-red-500 font-bold">*</span></label>
                                     <input
                                       list="drawer-areas"
                                       type="text"
@@ -763,35 +1384,67 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                             </div>
                           )}
                         </motion.div>
-                      )}
+                        
+                        {/* Distance Mode selector (Read-Only) */}
+                        <div className="space-y-2 mt-4 animate-fade-in">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/50">Delivery Distance Zone</label>
+                          
+                          <div className="p-4 bg-brand-dark/5 rounded-2xl border border-brand/5 shadow-sm flex items-center justify-between">
+                            <div>
+                              <p className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Distance from Studio</p>
+                              <div className="text-xs font-black text-brand mt-0.5">
+                                {calculatingDistance ? (
+                                  <span className="flex items-center gap-1.5 text-brand">
+                                    <RefreshCw className="animate-spin" size={12} />
+                                    Calculating...
+                                  </span>
+                                ) : calculatedDistance !== null ? (
+                                  `${calculatedDistance.toFixed(2)} km`
+                                ) : (
+                                  <span className="text-brand-dark/40 font-medium italic">Pending selection</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Delivery Mode</p>
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider mt-1 ${
+                                distanceMode === 'local'
+                                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 font-bold'
+                                  : 'bg-blue-50 text-blue-600 border border-blue-100 font-bold'
+                              }`}>
+                                {distanceMode === 'local' ? 'Local Same Day' : 'Domestic Shipping'}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {/* Distance Info Display Panel */}
+                          <div className="p-3.5 bg-brand/5 rounded-2xl border border-brand/10 text-[10px] font-semibold text-brand-dark/70 leading-relaxed space-y-1">
+                            {distanceMode === 'local' ? (
+                              <>
+                                <p className="font-bold text-brand flex items-center gap-1">📍 Local Same Day Delivery (Porter / Self)</p>
+                                <p>• Fixed delivery fee of ₹100.</p>
+                                <p>• <strong>Free Local Delivery</strong> on weekdays after 7 PM or weekends for orders above ₹399!</p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="font-bold text-brand flex items-center gap-1">📦 Domestic Shipping (Shiprocket)</p>
+                                <p>• Delivery fee based on weight: ₹60 per 500g.</p>
+                                <p>• Current total weight: <strong>{totalWeightGrams >= 1000 ? `${(totalWeightGrams/1000).toFixed(2)}kg` : `${totalWeightGrams}g`}</strong>.</p>
+                                <p className="text-brand/80">• Note: Any shipping charges over the actual cost will be refunded to you.</p>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
                     </div>
 
-                    {/* Payment card summary */}
-                    <div className="bg-white/60 p-5 rounded-3xl border border-brand/5 shadow-soft space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-brand/5 text-brand flex items-center justify-center">
-                          <HelpCircle size={16} />
-                        </div>
-                        <h4 className="font-serif font-black text-brand-dark text-base uppercase tracking-tight">UPI Payment details</h4>
-                      </div>
-                      <div className="p-3 bg-brand/5 rounded-2xl border border-brand/10 flex justify-between items-center">
-                        <div className="min-w-0">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-brand-dark/40 leading-none mb-1">Pay to UPI ID</p>
-                          <p className="font-mono font-bold text-brand-dark text-xs truncate">{upiId}</p>
-                          <p className="text-[9px] font-bold text-brand/70 mt-0.5">{upiName}</p>
-                        </div>
-                        <button
-                          onClick={copyUpi}
-                          className="w-8 h-8 bg-white hover:bg-brand/5 text-brand rounded-lg border border-brand/10 flex items-center justify-center transition-all active:scale-90"
-                          title="Copy UPI ID"
-                        >
-                          <Copy size={14} />
-                        </button>
-                      </div>
-                      <p className="text-[9px] font-semibold text-brand-dark/50 italic leading-normal">
-                        Note: Once you place the order, you will be redirected to WhatsApp to share your payment receipt screenshot. Delivery charges will be finalized based on actual distance.
-                      </p>
-                    </div>
+                    {/* Checkout Info note */}
+                                    <div className="bg-white/60 p-5 rounded-3xl border border-brand/5 shadow-soft">
+                                      <p className="text-[10px] font-semibold text-brand-dark/65 leading-relaxed">
+                                        📍 <strong>Order Confirmation:</strong> Once you click the "Confirm Order" button below, your order will be created and you will be redirected to WhatsApp to finalize your payment and schedule your delivery.
+                                      </p>
+                                    </div>
                   </motion.div>
                 )}
 
@@ -838,53 +1491,240 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
             {/* Bottom Actions section */}
             {items.length > 0 && step !== 'success' && (
-              <div className="border-t border-brand/10 pt-6 mt-auto space-y-4 relative z-10 bg-transparent">
-                <div className="flex justify-between items-end">
-                  <div>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-brand-dark/45">Total Amount</span>
-                    <h3 className="text-3xl font-black text-brand-dark leading-none mt-1">₹{total}</h3>
+              <div className="border-t border-brand/10 pt-4 mt-auto space-y-4 relative z-20 bg-white/90 backdrop-blur-md p-4 sm:p-6 -mx-6 sm:-mx-8 shrink-0 shadow-[0_-8px_30px_rgb(0,0,0,0.03)]">
+                
+                {/* Professional Receipt/Pricing Summary Box */}
+                <div className="bg-white/60 p-4 rounded-3xl border border-brand/5 shadow-soft space-y-2 text-xs relative z-10">
+                  <div className="flex justify-between font-semibold text-brand-dark/60">
+                    <span>Items Subtotal</span>
+                    <span className="font-bold text-brand-dark">₹{total}</span>
                   </div>
-                  {step === 'cart' && (
-                    <button 
-                      onClick={clearCart}
-                      className="text-[9px] font-black uppercase tracking-widest text-brand-dark/30 hover:text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-transparent hover:border-red-100 transition-all flex items-center gap-1"
-                    >
-                      <Trash2 size={12} /> Clear
-                    </button>
+                  
+                  {appliedCoupon && discount > 0 && (
+                    <div className="flex justify-between font-bold text-green-600">
+                      <span className="flex items-center gap-1">🎟️ Coupon ({appliedCoupon.code})</span>
+                      <span>- ₹{discount}</span>
+                    </div>
+                  )}
+
+                  {deliveryType === 'delivery' && (
+                    <div className="flex justify-between font-semibold text-brand-dark/60">
+                      <span>Delivery Fee ({distanceMode === 'local' ? 'Local ≤ 8km' : 'Domestic > 8km'}{calculatedDistance !== null ? ` • ${calculatedDistance.toFixed(1)}km` : ''})</span>
+                      <span className="font-bold text-brand-dark">{deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`}</span>
+                    </div>
+                  )}
+
+                  {deliveryType === 'pickup' && (
+                    <div className="flex justify-between font-semibold text-brand-dark/60">
+                      <span>Delivery Mode</span>
+                      <span className="text-brand font-bold uppercase tracking-wider text-[10px]">Store Pickup (Free)</span>
+                    </div>
                   )}
                 </div>
 
-                {step === 'cart' ? (
-                  <Button3D 
-                    onClick={() => {
-                      if (!user) {
-                        addToast('Please log in to place an order. Both email and WhatsApp number must be verified.', 'error');
-                        return;
-                      }
-                      if (!profile?.email_verified || !profile?.mobile_verified) {
-                        addToast('Both your email and WhatsApp number must be verified to place storefront orders. Please verify them in your profile settings.', 'error');
-                        return;
-                      }
-                      setStep('checkout');
-                    }}
-                    className="w-full h-14 sm:h-16 text-xs sm:text-sm font-black uppercase tracking-widest rounded-full shadow-luxury"
-                  >
-                    Checkout Now
-                  </Button3D>
-                ) : (
-                  <Button3D 
-                    onClick={handlePlaceOrder}
-                    disabled={submitting}
-                    className="w-full h-14 sm:h-16 text-xs sm:text-sm font-black uppercase tracking-widest rounded-full shadow-luxury flex items-center justify-center gap-2"
-                  >
-                    {submitting ? 'Placing Order...' : 'Confirm Order & Pay'}
-                  </Button3D>
-                )}
+                {/* Bottom Total & Checkout Button Row */}
+                <div className="flex items-center justify-between gap-4 pt-2 relative z-10 bg-white/40 p-4 rounded-[2rem] border border-brand/5 shadow-soft">
+                  <div className="shrink-0">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-brand-dark/45 leading-none">
+                      {appliedCoupon || deliveryType === 'delivery' ? 'Grand Total' : 'Total Amount'}
+                    </span>
+                    <h3 className="text-2xl font-black text-brand-dark leading-none mt-1">₹{total - discount + deliveryFee}</h3>
+                  </div>
+                  
+                  <div className="flex-grow">
+                    {step === 'cart' ? (
+                      <Button3D 
+                        onClick={() => {
+                          if (!user) {
+                            addToast('Please log in to place an order. Both email and WhatsApp number must be verified.', 'error');
+                            return;
+                          }
+                          if (!profile?.email_verified || !profile?.mobile_verified) {
+                            addToast('Both your email and WhatsApp number must be verified to place storefront orders. Please verify them in your profile settings.', 'error');
+                            return;
+                          }
+                          setStep('checkout');
+                        }}
+                        className="w-full h-12 text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-luxury"
+                      >
+                        Checkout Now
+                      </Button3D>
+                    ) : (
+                      <Button3D 
+                        onClick={handlePlaceOrder}
+                        disabled={submitting}
+                        className="w-full h-12 text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-luxury flex items-center justify-center gap-2"
+                      >
+                        {submitting ? 'Placing Order...' : 'Confirm Order'}
+                      </Button3D>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </motion.div>
         </>
       )}
+      
+      {/* Coupon Modal */}
+      <AnimatePresence>
+        {showCouponModal && (
+          <>
+            {/* Coupon Modal Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowCouponModal(false)}
+              className="fixed inset-0 bg-brand-dark/30 backdrop-blur-md z-[250]"
+            />
+            
+            {/* Coupon Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, y: 50, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 50, scale: 0.95 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+              className="fixed inset-x-4 bottom-4 md:inset-x-auto md:right-8 md:bottom-8 max-w-sm md:w-[360px] bg-gradient-to-b from-[#FFF5F7] to-white rounded-[2.5rem] p-6 shadow-deep border border-brand/10 z-[300] flex flex-col max-h-[70vh] md:max-h-[600px] overflow-hidden"
+            >
+              {/* Decorative background */}
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(253,232,236,0.3)_0%,transparent_50%)] pointer-events-none" />
+
+              {/* Header */}
+              <div className="flex justify-between items-center pb-3 border-b border-brand/10 relative z-10 shrink-0">
+                <div className="flex items-center gap-2 text-brand">
+                  <Ticket size={18} className="stroke-[2.5]" />
+                  <h3 className="font-serif font-black text-brand-dark text-base uppercase tracking-tight">Available Offers</h3>
+                </div>
+                <button 
+                  onClick={() => setShowCouponModal(false)}
+                  className="w-8 h-8 bg-white hover:bg-brand/5 border border-brand/10 text-brand-dark rounded-xl flex items-center justify-center transition-all active:scale-95"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Promocode Manual Entry */}
+              <div className="py-3 border-b border-brand/5 relative z-10 shrink-0 space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Enter Promo Code</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. FESTIVE50"
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                    disabled={!!appliedCoupon}
+                    className="flex-grow h-10 px-3 bg-white border border-brand/10 rounded-xl text-xs font-bold uppercase tracking-wider text-brand-dark placeholder:normal-case placeholder:font-semibold placeholder:text-brand-dark/40 outline-none focus:border-brand/40 shadow-inner disabled:bg-brand-dark/5 disabled:text-brand-dark/50"
+                  />
+                  {appliedCoupon ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleRemoveCoupon();
+                      }}
+                      className="h-10 px-3 bg-red-50 text-red-500 border border-red-100 hover:bg-red-500 hover:text-white rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
+                    >
+                      Remove
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const success = handleApplyPromoCode();
+                        if (success) {
+                          setShowCouponModal(false);
+                        }
+                      }}
+                      className="h-10 px-4 bg-brand text-white hover:bg-brand-dark rounded-xl text-[9px] font-black uppercase tracking-widest transition-all shadow-sm"
+                    >
+                      Apply
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Coupon List Container */}
+              <div className="flex-1 overflow-y-auto py-4 space-y-3 pr-1 no-scrollbar relative z-10">
+                {coupons.length === 0 ? (
+                  <div className="text-center py-12 space-y-2">
+                    <span className="text-3xl">🧁</span>
+                    <p className="text-xs font-bold text-brand-dark/50 italic">No available coupons right now.</p>
+                  </div>
+                ) : (
+                  coupons.map((coupon) => {
+                    const minAmount = coupon.min_order_amount || 0;
+                    const isMinAmountSatisfied = total >= minAmount;
+                    
+                    const hasEligibleItems = !coupon.applicable_category || items.some(item => {
+                      const prod = products.find(p => p.id === item.id);
+                      return prod?.category === coupon.applicable_category;
+                    });
+
+                    const isApplicable = isMinAmountSatisfied && hasEligibleItems;
+                    const amountNeeded = minAmount - total;
+
+                    return (
+                      <div 
+                        key={coupon.id} 
+                        className={`p-4 rounded-2xl border transition-all ${
+                          isApplicable 
+                            ? 'bg-white border-brand/10 shadow-sm hover:border-brand/30' 
+                            : 'bg-gray-50/70 border-gray-200/60 opacity-60 saturate-50'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="space-y-1">
+                            <span className={`inline-block px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                              isApplicable 
+                                ? 'bg-brand/5 text-brand border border-brand/10' 
+                                : 'bg-gray-100 text-gray-400 border border-gray-200'
+                            }`}>
+                              {coupon.code}
+                            </span>
+                            <h4 className="font-bold text-xs text-brand-dark">
+                              {coupon.type === 'percent' ? `${coupon.value}% Off` : `₹${coupon.value} Off`}
+                            </h4>
+                            {coupon.description && (
+                              <p className="text-[10px] text-brand-dark/50 font-semibold leading-normal">
+                                {coupon.description}
+                              </p>
+                            )}
+                          </div>
+
+                          {isApplicable ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleApplyPromoCode(coupon.code);
+                                setShowCouponModal(false);
+                              }}
+                              className="px-3 py-1.5 bg-brand text-white hover:bg-brand-dark rounded-xl text-[9px] font-black uppercase tracking-widest transition-all shadow-sm"
+                            >
+                              Apply
+                            </button>
+                          ) : (
+                            <span className="text-[8px] font-black uppercase tracking-widest text-gray-400 bg-gray-100/50 border border-gray-200/50 px-2.5 py-1 rounded-lg">
+                              Locked
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Informational Message for Not Applicable */}
+                        {!isApplicable && (
+                          <div className="mt-2.5 pt-2 border-t border-dashed border-gray-200 text-[8px] font-black uppercase tracking-widest text-brand-dark/40">
+                            {!isMinAmountSatisfied && `Add ₹${amountNeeded} more to unlock`}
+                            {isMinAmountSatisfied && !hasEligibleItems && `Only applicable on ${coupon.applicable_category}`}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </AnimatePresence>
   );
 };

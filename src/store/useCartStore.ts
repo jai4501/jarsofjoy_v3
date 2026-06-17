@@ -71,9 +71,9 @@ export const useCartStore = create<CartState>((set, get) => ({
     syncCartWithDB(newItems);
   },
   updateQuantity: (id, quantity) => {
-    const newItems = get().items.map((item) =>
-      item.id === id ? { ...item, quantity: Math.max(0, quantity) } : item
-    );
+    const newItems = get().items
+      .map((item) => (item.id === id ? { ...item, quantity: Math.max(0, quantity) } : item))
+      .filter((item) => item.quantity > 0);
     set({ items: newItems });
     syncCartWithDB(newItems);
   },

@@ -106,54 +106,40 @@ export const AdminPOS = () => {
         onBack={() => setShowCheckout(false)}
         onComplete={async (orderData) => {
           try {
-            // 1. Insert order record into database
-            const { data: order, error: orderError } = await (supabase
-              .from('orders') as any)
-              .insert([{
-                user_id: orderData.user_id,
+            // Retrieve backend URL
+            const { data: urlData } = await supabase
+              .from('site_content')
+              .select('value')
+              .eq('key', 'whatsapp_backend_url')
+              .single();
+            const backendUrl = (urlData as any)?.value || `http://${window.location.hostname}:3001`;
+
+            // Place order via backend
+            const response = await fetch(`${backendUrl}/api/orders/place`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                items: orderData.items.map((item: any) => ({ id: item.id, quantity: item.quantity })),
+                coupon_code: orderData.coupon_code,
+                delivery_type: orderData.delivery_type,
+                delivery_address: orderData.address,
+                delivery_distance_km: orderData.delivery_distance_km,
                 customer_name: orderData.customer_name,
                 customer_phone: orderData.customer_phone,
-                address: orderData.address,
-                items: orderData.items,
-                total: orderData.total,
-                subtotal: orderData.subtotal,
-                delivery_charge: orderData.delivery_charge,
-                discount_amount: orderData.discount_amount,
-                coupon_code: orderData.coupon_code,
-                status: orderData.status,
+                user_id: orderData.user_id,
+                order_source: 'pos',
                 payment_method: orderData.payment_method,
                 payment_status: orderData.payment_status,
-                order_source: orderData.order_source,
-                delivery_type: orderData.delivery_type
-              }])
-              .select()
-              .single();
-
-            if (orderError) throw orderError;
-
-            // 2. Insert order items
-            const orderItems = orderData.items.map((item: any) => {
-              const origProductId = item.id.includes('-') && item.id.split('-').length > 5 
-                ? item.id.split('-').slice(0, 5).join('-') 
-                : item.id;
-              const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-              const isValidUuid = uuidRegex.test(origProductId);
-
-              return {
-                order_id: order.id,
-                product_id: isValidUuid ? origProductId : null,
-                product_name: item.name,
-                quantity: item.quantity,
-                unit_price: item.price,
-                total_price: item.price * item.quantity
-              };
+                status: orderData.status
+              })
             });
 
-            const { error: itemsError } = await supabase
-              .from('order_items')
-              .insert(orderItems);
-            
-            if (itemsError) throw itemsError;
+            const resData = await response.json();
+            if (!response.ok) {
+              throw new Error(resData.error || 'Failed to place POS order securely.');
+            }
+
+            const order = resData.order;
 
             // 3. Upsert customer in customers CRM
             let cleanPhone = orderData.customer_phone.replace(/\D/g, '');
@@ -174,7 +160,7 @@ export const AdminPOS = () => {
 
             if (customerObj) {
               const newTotalOrders = (customerObj.total_orders || 0) + 1;
-              const newTotalSpent = Number(customerObj.total_spent || 0) + Number(orderData.total);
+              const newTotalSpent = Number(customerObj.total_spent || 0) + Number(order.total);
               
               await (supabase.from('customers') as any)
                 .update({
@@ -182,7 +168,7 @@ export const AdminPOS = () => {
                   total_orders: newTotalOrders,
                   total_spent: newTotalSpent,
                   last_order_at: new Date().toISOString(),
-                  last_order_total: orderData.total
+                  last_order_total: order.total
                 })
                 .eq('phone', cleanPhone);
             } else {
@@ -192,9 +178,9 @@ export const AdminPOS = () => {
                   name: orderData.customer_name || 'POS Customer',
                   onboarding_status: 'done',
                   total_orders: 1,
-                  total_spent: orderData.total,
+                  total_spent: order.total,
                   last_order_at: new Date().toISOString(),
-                  last_order_total: orderData.total
+                  last_order_total: order.total
                 }]);
             }
 

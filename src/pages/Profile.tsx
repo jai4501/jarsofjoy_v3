@@ -8,7 +8,7 @@ import {
   RefreshCw, LogOut, Bell, Sparkles, 
   MessageCircle, MapPin, ShieldCheck, Heart,
   Settings, Calendar,
-  MessageSquare, X
+  MessageSquare, X, Download, Share, Plus, Search
 } from 'lucide-react';
 import { Button3D } from '../components/ui/Button3D';
 import { FloatingCard } from '../components/ui/FloatingCard';
@@ -52,6 +52,69 @@ export const Profile = () => {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [imgTimestamp, setImgTimestamp] = useState(() => Date.now());
+  const [showAvatarPreview, setShowAvatarPreview] = useState(false);
+  
+  const [pwaPrompt, setPwaPrompt] = useState<any>(null);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [showIOSInstructions, setShowIOSInstructions] = useState(false);
+
+  useEffect(() => {
+    const standalone = 
+      window.matchMedia('(display-mode: standalone)').matches || 
+      (window.navigator as any).standalone === true;
+    setIsStandalone(standalone);
+
+    if (standalone) return;
+
+    const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    setIsIOS(isIOSDevice);
+
+    if ((window as any).deferredPrompt) {
+      setPwaPrompt((window as any).deferredPrompt);
+    }
+
+    const handlePrompt = () => {
+      setPwaPrompt((window as any).deferredPrompt);
+    };
+
+    const handleInstalled = () => {
+      setIsStandalone(true);
+      setPwaPrompt(null);
+    };
+
+    window.addEventListener('pwa-prompt-available', handlePrompt);
+    window.addEventListener('pwa-installed', handleInstalled);
+    window.addEventListener('appinstalled', handleInstalled);
+
+    return () => {
+      window.removeEventListener('pwa-prompt-available', handlePrompt);
+      window.removeEventListener('pwa-installed', handleInstalled);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (isIOS) {
+      setShowIOSInstructions(true);
+      return;
+    }
+
+    const promptEvent = pwaPrompt || (window as any).deferredPrompt;
+    if (!promptEvent) return;
+
+    await promptEvent.prompt();
+    const { outcome } = await promptEvent.userChoice;
+    console.log('PWA profile install outcome:', outcome);
+
+    if (outcome === 'accepted') {
+      localStorage.setItem('pwa_installed', 'true');
+      setIsStandalone(true);
+      setPwaPrompt(null);
+      (window as any).deferredPrompt = null;
+      window.dispatchEvent(new CustomEvent('pwa-installed'));
+    }
+  };
   
   const [notificationsActive, setNotificationsActive] = useState((profile as any)?.notifications_active ?? true);
 
@@ -712,7 +775,11 @@ export const Profile = () => {
             <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-10 mt-12 sm:mt-0">
                {/* Profile Picture Upload */}
                <div className="relative group shrink-0">
-                  <div className="w-32 h-32 sm:w-44 sm:h-44 rounded-[2.5rem] border-4 border-white shadow-luxury overflow-hidden bg-white">
+                  <div 
+                    onClick={() => setShowAvatarPreview(true)}
+                    className="w-32 h-32 sm:w-44 sm:h-44 rounded-[2.5rem] border-4 border-white shadow-luxury overflow-hidden bg-white cursor-zoom-in hover:scale-[1.02] active:scale-[0.98] transition-transform duration-300 relative group/avatar"
+                    title="Click to preview profile picture"
+                  >
                      <img 
                        src={(profile as any)?.avatar_url ? `${(profile as any).avatar_url}?t=${imgTimestamp}` : `https://api.dicebear.com/7.x/initials/svg?seed=${profile?.full_name || user?.email}`} 
                        className="w-full h-full object-cover"
@@ -723,6 +790,9 @@ export const Profile = () => {
                          (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${profile?.full_name || user?.email}`;
                        }}
                      />
+                     <div className="absolute inset-0 bg-black/10 opacity-0 group-hover/avatar:opacity-100 transition-opacity flex items-center justify-center text-white pointer-events-none">
+                       <span className="bg-black/40 p-2.5 rounded-full backdrop-blur-sm"><Search size={16} /></span>
+                     </div>
                   </div>
                   <label className="absolute bottom-2 right-2 w-10 h-10 bg-brand text-white rounded-2xl flex items-center justify-center shadow-lg cursor-pointer hover:scale-110 transition-all border-2 border-white">
                      <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} disabled={uploading} />
@@ -896,10 +966,44 @@ export const Profile = () => {
                       </div>
                       <h4 className="heading-serif text-2xl mb-2 !text-white">Need Help?</h4>
                       <p className="text-xs text-white/70 font-medium mb-8 leading-relaxed">Have a custom request or issue? Our host is here to help.</p>
-                      <button onClick={handleChat} className="w-full py-4 bg-brand text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:scale-105 transition-all shadow-xl shadow-brand/20 flex items-center justify-center gap-3">
+                      <button onClick={handleChat} className="w-full py-4 bg-brand text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-xl shadow-brand/20 flex items-center justify-center gap-3 cursor-pointer">
                          <MessageSquare size={16}/> Chat with Us
                       </button>
                    </div>
+
+                   {!isStandalone && (pwaPrompt || isIOS) && (
+                     <div className="p-6 sm:p-10 rounded-[3rem] bg-white border border-brand/5 shadow-luxury relative overflow-hidden flex flex-col items-center text-center animate-fade-in">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-brand/5 rounded-full -mr-16 -mt-16 pointer-events-none" />
+                        <div className="w-20 h-20 bg-brand/5 rounded-3xl flex items-center justify-center text-brand mb-6 shadow-soft">
+                           <Download size={40} />
+                        </div>
+                        
+                        {showIOSInstructions ? (
+                          <>
+                            <h4 className="heading-serif text-2xl mb-4 text-brand-dark">How to Install</h4>
+                            <div className="text-[10px] leading-relaxed text-brand-dark/75 space-y-2.5 font-semibold text-left w-full mb-6">
+                              <p className="flex items-center gap-1.5">
+                                1. Tap the <span className="p-1 px-1.5 bg-brand/5 border border-brand/10 rounded font-black inline-flex items-center gap-0.5 text-brand"><Share size={11} /> Share</span> button in Safari.
+                              </p>
+                              <p className="flex items-center gap-1.5">
+                                2. Scroll and tap <span className="p-1 px-1.5 bg-brand/5 border border-brand/10 rounded font-black inline-flex items-center gap-0.5 text-brand"><Plus size={11} /> Add to Home Screen</span>.
+                              </p>
+                            </div>
+                            <button onClick={() => setShowIOSInstructions(false)} className="w-full py-4 bg-brand text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-xl shadow-brand/20 cursor-pointer">
+                               Go Back
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <h4 className="heading-serif text-2xl mb-2 text-brand-dark">Get Our App!</h4>
+                            <p className="text-xs text-brand-dark/60 font-medium mb-8 leading-relaxed">Install Jars of Joy to your home screen for instant access and order updates.</p>
+                            <button onClick={handleInstallApp} className="w-full py-4 bg-brand text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-xl shadow-brand/20 flex items-center justify-center gap-3 cursor-pointer">
+                               <Download size={16}/> Install App
+                            </button>
+                          </>
+                        )}
+                     </div>
+                   )}
                 </div>
               </motion.div>
             )}
@@ -1192,6 +1296,43 @@ export const Profile = () => {
                   </button>
                 </div>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Avatar Preview Modal */}
+      <AnimatePresence>
+        {showAvatarPreview && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowAvatarPreview(false)}
+            className="fixed inset-0 bg-brand-dark/90 backdrop-blur-md z-[300] flex items-center justify-center p-4 cursor-zoom-out"
+          >
+            {/* Close Button */}
+            <button
+              onClick={() => setShowAvatarPreview(false)}
+              className="absolute top-6 right-6 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <X size={24} />
+            </button>
+
+            {/* Avatar Image in Modal */}
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative max-w-[90vw] max-h-[90vh] md:max-w-lg w-full aspect-square rounded-[3rem] overflow-hidden border-4 border-white/20 shadow-2xl bg-white"
+            >
+              <img
+                src={(profile as any)?.avatar_url ? `${(profile as any).avatar_url}?t=${imgTimestamp}` : `https://api.dicebear.com/7.x/initials/svg?seed=${profile?.full_name || user?.email}`}
+                className="w-full h-full object-cover"
+                alt="Avatar Preview"
+              />
             </motion.div>
           </motion.div>
         )}

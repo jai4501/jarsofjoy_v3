@@ -325,6 +325,9 @@ CREATE TABLE IF NOT EXISTS public.temp_otps (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+ALTER TABLE public.temp_otps ENABLE ROW LEVEL SECURITY;
+
+
 -- =========================================================
 -- 14. STAFF NOTIFICATIONS
 -- =========================================================
@@ -414,6 +417,17 @@ CREATE TABLE IF NOT EXISTS public.site_content (
 -- 19. ROW LEVEL SECURITY POLICIES
 -- =========================================================
 
+-- SECURITY CHECK FUNCTIONS
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles 
+    WHERE id = auth.uid() AND (role = 'admin' OR email = 'jarsofjoy.bakes@gmail.com')
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 DO $$
 BEGIN
 
@@ -444,6 +458,23 @@ BEGIN
       WITH CHECK (auth.role() = 'authenticated');
   END IF;
 
+  -- ORDERS
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can view their own orders') THEN
+    CREATE POLICY "Users can view their own orders" ON public.orders FOR SELECT 
+      USING (auth.uid() = user_id OR public.is_admin());
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admin can update orders') THEN
+    CREATE POLICY "Admin can update orders" ON public.orders FOR UPDATE
+      USING (public.is_admin())
+      WITH CHECK (public.is_admin());
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admin can delete orders') THEN
+    CREATE POLICY "Admin can delete orders" ON public.orders FOR DELETE
+      USING (public.is_admin());
+  END IF;
+
   -- PROCESSED MESSAGES
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow admin all processed_messages') THEN
     CREATE POLICY "Allow admin all processed_messages"
@@ -461,11 +492,23 @@ BEGIN
   END IF;
 
   -- ORDER ITEMS
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow authenticated access order_items') THEN
-    CREATE POLICY "Allow authenticated access order_items"
-      ON public.order_items FOR ALL
-      USING (auth.role() = 'authenticated')
-      WITH CHECK (auth.role() = 'authenticated');
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can view their own order_items') THEN
+    CREATE POLICY "Users can view their own order_items" 
+      ON public.order_items FOR SELECT 
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.orders
+          WHERE public.orders.id = public.order_items.order_id
+            AND (public.orders.user_id = auth.uid() OR public.is_admin())
+        )
+      );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admin can manage order_items') THEN
+    CREATE POLICY "Admin can manage order_items" 
+      ON public.order_items FOR ALL 
+      USING (public.is_admin()) 
+      WITH CHECK (public.is_admin());
   END IF;
 
   -- STAFF NOTIFICATIONS
@@ -490,6 +533,14 @@ BEGIN
       ON public.customer_tags FOR ALL
       USING (auth.role() = 'authenticated')
       WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+
+  -- TEMP OTPS
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow admin all temp_otps') THEN
+    CREATE POLICY "Allow admin all temp_otps" 
+      ON public.temp_otps FOR ALL 
+      USING (public.is_admin()) 
+      WITH CHECK (public.is_admin());
   END IF;
 
 END $$;
@@ -559,6 +610,28 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- =========================================================
+-- 21B. PROFILE ROLE TRIGGER: protect profile role from unauthorized updates
+-- =========================================================
+
+CREATE OR REPLACE FUNCTION public.protect_profile_role()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- If the role is being updated, verify if the updater is an admin or if it's a system update
+  IF OLD.role IS DISTINCT FROM NEW.role THEN
+    IF auth.uid() IS NOT NULL AND NOT public.is_admin() THEN
+      RAISE EXCEPTION 'Unauthorized: Only administrators can modify profile roles.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trigger_protect_profile_role ON public.profiles;
+CREATE TRIGGER trigger_protect_profile_role
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.protect_profile_role();
 
 -- =========================================================
 -- 22. SEED DATA — PRODUCTS

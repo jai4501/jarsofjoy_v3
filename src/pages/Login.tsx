@@ -7,8 +7,6 @@ import { Button3D } from '../components/ui/Button3D';
 import { Mail, Lock, User, Phone, ShieldCheck, Key, RefreshCw, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToastStore } from '../store/useToastStore';
-import { sendWhatsAppNotification } from '../lib/whatsapp';
-import { sendEmailOtp } from '../lib/email';
 
 export const Login = () => {
   const navigate = useNavigate();
@@ -103,35 +101,26 @@ export const Login = () => {
       throw new Error(`Please wait ${activeCooldown} seconds before requesting another OTP.`);
     }
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    // Retrieve backend URL
+    const { data: urlData } = await supabase
+      .from('site_content')
+      .select('value')
+      .eq('key', 'whatsapp_backend_url')
+      .single();
+    const backendUrl = (urlData as any)?.value || `http://${window.location.hostname}:3001`;
 
-    try {
-      // Clean up previous OTPs for this target first
-      await (supabase.from('temp_otps') as any).delete().eq('target', target);
-      // Save code to temp_otps table
-      const { error: dbError } = await (supabase
-         .from('temp_otps') as any)
-         .insert([{ target, code }]);
-      if (dbError) throw dbError;
-    } catch (dbErr: any) {
-      console.error('Failed to register OTP in database:', dbErr);
+    const response = await fetch(`${backendUrl}/api/otp/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target, method, fullName })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to request OTP from server.');
     }
-    
-    if (method === 'whatsapp') {
-      try {
-        await sendWhatsAppNotification(target, `Your Jars of Joy verification code is: ${code}. Happy baking! 🍯`);
-        addToast('OTP sent to WhatsApp!', 'sweet');
-      } catch (err) {
-        throw new Error('WhatsApp bot failed. Please try Email.', { cause: err });
-      }
-    } else {
-      try {
-        await sendEmailOtp(target, code, fullName || 'Member');
-        addToast('OTP sent to Email!', 'sweet');
-      } catch (err) {
-        throw new Error('EmailJS failed. Please check credentials.', { cause: err });
-      }
-    }
+
+    addToast(method === 'whatsapp' ? 'OTP sent to WhatsApp!' : 'OTP sent to Email!', 'sweet');
 
     const newLimit = recordOtpSent();
     setOtpCount(newLimit.count);
@@ -311,64 +300,61 @@ export const Login = () => {
         ? (signupMethod === 'whatsapp' ? mobile : cleanInput)
         : (cleanInput.includes('@') ? cleanInput : (cleanInput.startsWith('+91') ? cleanInput : '+91' + cleanInput.replace(/\D/g, '').slice(-10)));
 
-      // Verify OTP from database
-      const { data: otpRecords } = await (supabase
-        .from('temp_otps') as any)
-        .select('*')
-        .eq('target', target)
-        .eq('code', otp)
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      const isDevBypass = otp === '123456';
-      const otpRecord = otpRecords && otpRecords.length > 0 ? otpRecords[0] : null;
-
-      if (!otpRecord && !isDevBypass) {
-        throw new Error('Invalid or expired verification code.');
-      }
-
-      if (otpRecord) {
-        await supabase.from('temp_otps').delete().eq('id', otpRecord.id);
-      }
+      const { data: urlData } = await supabase
+        .from('site_content')
+        .select('value')
+        .eq('key', 'whatsapp_backend_url')
+        .single();
+      const backendUrl = (urlData as any)?.value || `http://${window.location.hostname}:3001`;
 
       if (isSignUp) {
-        // Complete registration
-        const { data, error: signupError } = await supabase.auth.signUp(
-          signupMethod === 'whatsapp' ? {
-            phone: mobile,
+        // Complete registration via backend
+        const response = await fetch(`${backendUrl}/api/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            signupMethod,
+            target,
+            code: otp,
             password,
-            options: { data: { full_name: fullName, mobile } }
-          } : {
-            email: cleanInput,
-            password,
-            options: { data: { full_name: fullName } }
-          }
-        );
+            fullName
+          })
+        });
 
-        if (signupError) throw signupError;
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Registration failed.');
+        }
 
         if (data.user) {
-          await (supabase.from('profiles') as any).update(
-            signupMethod === 'whatsapp' ? {
-              full_name: fullName,
-              mobile: mobile,
-              mobile_verified: true,
-              email_verified: false,
-              role: 'customer'
-            } : {
-              full_name: fullName,
-              email: cleanInput,
-              email_verified: true,
-              mobile_verified: false,
-              role: 'customer'
-            }
-          ).eq('id', data.user.id);
-          
-          await setUser(data.user);
+          // Sign in with the registered password
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email: signupMethod === 'email' ? target : undefined,
+            phone: signupMethod === 'whatsapp' ? target : undefined,
+            password
+          } as any);
+
+          if (signInError) throw signInError;
+          await setUser(signInData.user);
           addToast('Account created and verified! Welcome 🍯', 'sweet');
           navigate('/');
         }
       } else {
+        // For password resets, verify code via temp_otps (the reset password form submit will call /reset-password backend)
+        const { data: otpRecords } = await (supabase
+          .from('temp_otps') as any)
+          .select('*')
+          .eq('target', target)
+          .eq('code', otp)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        const isDevBypass = otp === '123456';
+        const otpRecord = otpRecords && otpRecords.length > 0 ? otpRecords[0] : null;
+
+        if (!otpRecord && !isDevBypass) {
+          throw new Error('Invalid or expired verification code.');
+        }
         setStep('reset');
       }
     } catch (err: any) {
@@ -376,7 +362,7 @@ export const Login = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const finalizeReset = async () => {
     if (newPassword.length < 6) {

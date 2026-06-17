@@ -26,9 +26,87 @@ const getCachedCatalog = () => {
   }
 };
 
+import { useUserStore } from './useUserStore';
+
+const preloadAllCatalogImages = (products: Product[], categories: Category[]) => {
+  if (typeof window === 'undefined') return;
+  const triggerPreload = () => {
+    // 1. Preload all category images
+    categories.forEach((cat) => {
+      const url = (cat as any).image_url;
+      if (url) {
+        fetch(url, { mode: 'cors' }).catch(() => {});
+      }
+    });
+
+    // 2. Preload all product images (all images in the array)
+    products.forEach((p) => {
+      if (p.images && p.images.length > 0) {
+        p.images.forEach((url) => {
+          if (url) {
+            fetch(url, { mode: 'cors' }).catch(() => {});
+          }
+        });
+      }
+    });
+
+    // 3. Preload business logo (from cached settings)
+    try {
+      const savedSettings = localStorage.getItem('site_settings');
+      if (savedSettings) {
+        const settings = JSON.parse(savedSettings);
+        const businessLogo = settings['business_logo'];
+        if (businessLogo) {
+          fetch(businessLogo, { mode: 'cors' }).catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to parse settings for logo preloading:', e);
+    }
+
+    // 4. Preload user avatar if profile exists
+    try {
+      const profile = useUserStore.getState().profile;
+      const avatarUrl = (profile as any)?.avatar_url;
+      if (avatarUrl) {
+        fetch(avatarUrl, { mode: 'cors' }).catch(() => {});
+      }
+    } catch (e) {
+      console.warn('Failed to fetch profile avatar for preloading:', e);
+    }
+
+    // 5. Preload all static theme webp images to guarantee local storage / offline usage
+    const staticThemeImages = [
+      '/bakery_hero.webp',
+      '/bakery_packaging.webp',
+      '/business_logo_new.webp',
+      '/category_brownie.webp',
+      '/category_celebration_cake.webp',
+      '/category_cookie.webp',
+      '/category_swiss_roll.webp',
+      '/category_tea_cake.webp',
+      '/icon-192.webp',
+      '/icon-512.webp'
+    ];
+    staticThemeImages.forEach((imgUrl) => {
+      fetch(imgUrl, { mode: 'cors' }).catch(() => {});
+    });
+  };
+
+  if ('requestIdleCallback' in window) {
+    (window as any).requestIdleCallback(triggerPreload);
+  } else {
+    setTimeout(triggerPreload, 1000);
+  }
+};
+
 export const useProductStore = create<ProductState>((set, get) => {
   const cached = getCachedCatalog();
   const hasCache = cached.products.length > 0 && cached.categories.length > 0;
+
+  if (hasCache) {
+    preloadAllCatalogImages(cached.products, cached.categories);
+  }
 
   return {
     products: cached.products,
@@ -65,6 +143,7 @@ export const useProductStore = create<ProductState>((set, get) => {
                 products: prodRes.data as Product[], 
                 categories: catRes.data as Category[] 
               });
+              preloadAllCatalogImages(prodRes.data as Product[], catRes.data as Category[]);
             }
           } catch (err) {
             console.error('Silent catalog background update failed:', err);
@@ -99,6 +178,7 @@ export const useProductStore = create<ProductState>((set, get) => {
           isLoaded: true,
           loading: false
         });
+        preloadAllCatalogImages((prodRes.data || []) as Product[], (catRes.data || []) as Category[]);
       } catch (err) {
         console.error('Error fetching catalog:', err);
         set({ loading: false });
