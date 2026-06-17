@@ -57,6 +57,8 @@ export const POSCheckout = ({ cart, onBack, onComplete }: POSCheckoutProps) => {
   const [loading, setLoading] = useState(false);
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const mrpTotal = cart.reduce((sum, item) => sum + Math.round(item.price * 1.3) * item.quantity, 0);
+  const mrpDiscount = mrpTotal - subtotal;
 
   // Real-time calculation when dependencies change
   useEffect(() => {
@@ -473,6 +475,16 @@ export const POSCheckout = ({ cart, onBack, onComplete }: POSCheckoutProps) => {
 
                 <div className="p-6 bg-brand/5 border-t border-brand/10 space-y-3">
                    <div className="flex justify-between text-xs font-bold text-brand-dark/60">
+                      <span>Total MRP</span>
+                      <span className="line-through decoration-brand-dark/30">₹{mrpTotal}</span>
+                   </div>
+                   {mrpDiscount > 0 && (
+                     <div className="flex justify-between text-xs font-bold text-green-600">
+                        <span>✨ Discount on MRP</span>
+                        <span>-₹{mrpDiscount}</span>
+                     </div>
+                   )}
+                   <div className="flex justify-between text-xs font-bold text-brand-dark/60 pt-2 border-t border-brand/5">
                       <span>Subtotal</span>
                       <span>₹{subtotal}</span>
                    </div>

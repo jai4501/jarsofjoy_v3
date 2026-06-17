@@ -311,12 +311,43 @@ export const generateInvoicePDF = async (order: Order, businessInfo: Record<stri
     alternateRowStyles: { fillColor: [250, 250, 250] }
   });
 
-  const finalY = (doc as any).lastAutoTable.finalY + 15;
+  let currentYPos = (doc as any).lastAutoTable.finalY + 10;
+  
+  const subtotal = (order as any).subtotal || (order.items || []).reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const mrpTotal = (order.items || []).reduce((sum, item) => sum + Math.round(item.price * 1.3) * item.quantity, 0);
+  const discountOnMrp = mrpTotal - subtotal;
+  const delivery = (order as any).delivery_charge || 0;
+  
+  let couponDiscount = 0;
+  if (order.total && order.total < subtotal + delivery) {
+     couponDiscount = (subtotal + delivery) - order.total;
+  }
+  
+  doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100);
+  
+  doc.text('Total MRP:', 130, currentYPos); doc.text(`Rs. ${mrpTotal.toFixed(2)}`, 195, currentYPos, { align: 'right' }); currentYPos += 6;
+  if (discountOnMrp > 0) {
+    doc.setTextColor(0, 150, 0);
+    doc.text('Discount on MRP:', 130, currentYPos); doc.text(`- Rs. ${discountOnMrp.toFixed(2)}`, 195, currentYPos, { align: 'right' }); currentYPos += 6;
+    doc.setTextColor(100, 100, 100);
+  }
+  doc.text('Subtotal:', 130, currentYPos); doc.text(`Rs. ${subtotal.toFixed(2)}`, 195, currentYPos, { align: 'right' }); currentYPos += 6;
+  
+  if (couponDiscount > 0) {
+     doc.setTextColor(0, 150, 0);
+     doc.text('Coupon Applied:', 130, currentYPos); doc.text(`- Rs. ${couponDiscount.toFixed(2)}`, 195, currentYPos, { align: 'right' }); currentYPos += 6;
+     doc.setTextColor(100, 100, 100);
+  }
+  
+  doc.text('Delivery Fee:', 130, currentYPos); doc.text(delivery === 0 ? 'FREE' : `+ Rs. ${delivery.toFixed(2)}`, 195, currentYPos, { align: 'right' }); currentYPos += 8;
+
   doc.setDrawColor(BRAND_COLOR[0], BRAND_COLOR[1], BRAND_COLOR[2]);
   doc.setLineWidth(0.5);
-  doc.line(130, finalY - 5, 195, finalY - 5);
+  doc.line(130, currentYPos - 4, 195, currentYPos - 4);
   doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(BRAND_COLOR[0], BRAND_COLOR[1], BRAND_COLOR[2]);
-  doc.text('GRAND TOTAL:', 130, finalY); doc.text(`Rs. ${Number(order.total).toFixed(2)}`, 195, finalY, { align: 'right' });
+  doc.text('GRAND TOTAL:', 130, currentYPos + 2); doc.text(`Rs. ${Number(order.total).toFixed(2)}`, 195, currentYPos + 2, { align: 'right' });
+
+  const finalY = currentYPos + 2;
   doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100);
   doc.text('Notes: Please pay via UPI and share screenshot on WhatsApp.', 15, finalY + 20);
   doc.setFontSize(11); doc.setFont('helvetica', 'italic'); doc.setTextColor(BRAND_COLOR[0], BRAND_COLOR[1], BRAND_COLOR[2]);

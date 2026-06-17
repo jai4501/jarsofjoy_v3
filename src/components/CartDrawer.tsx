@@ -322,6 +322,8 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
   // Local calculation of total amount to fix calculation errors
   const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const mrpTotal = items.reduce((sum, item) => sum + Math.round(item.price * 1.3) * item.quantity, 0);
+  const mrpDiscount = mrpTotal - total;
 
   // Parse total weight of items in cart
   const totalWeightGrams = items.reduce((sum, item) => {
@@ -1562,6 +1564,18 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                 {/* Professional Receipt/Pricing Summary Box */}
                 <div className="bg-white/60 p-4 rounded-3xl border border-brand/5 shadow-soft space-y-2 text-xs relative z-10">
                   <div className="flex justify-between font-semibold text-brand-dark/60">
+                    <span>Total MRP</span>
+                    <span className="font-bold text-brand-dark line-through decoration-brand-dark/30">₹{mrpTotal}</span>
+                  </div>
+                  
+                  {mrpDiscount > 0 && (
+                    <div className="flex justify-between font-bold text-green-600">
+                      <span className="flex items-center gap-1">✨ Discount on MRP</span>
+                      <span>- ₹{mrpDiscount}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between font-semibold text-brand-dark/60 pt-1 border-t border-brand/5">
                     <span>Items Subtotal</span>
                     <span className="font-bold text-brand-dark">₹{total}</span>
                   </div>
