@@ -213,6 +213,7 @@ async function connectToWhatsApp() {
           setTimeout(connectToWhatsApp, delay);
         } else {
           console.log('Logged out explicitly. Clearing session.');
+          sendTelegramMessage('🛑 <b>WhatsApp Logged Out</b>\nYour WhatsApp device was logged out (possibly by Meta or manual action). Please re-link your device via the admin portal to resume notifications.');
           if(fs.existsSync(authDir)) {
             fs.rmSync(authDir, { recursive: true, force: true });
           }
