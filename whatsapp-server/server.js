@@ -884,6 +884,11 @@ app.post('/api/orders/place', async (req, res) => {
     const { error: itemsError } = await serverSupabase.from('order_items').insert(orderItems);
     if (itemsError) throw itemsError;
 
+    if (payment_method === 'upi' && payment_status === 'verification_pending') {
+      const msg = `🔔 <b>New UPI Payment Pending</b>\n\n<b>Order ID:</b> #${order.id.slice(0, 8).toUpperCase()}\n<b>Name:</b> ${customer_name}\n<b>Phone:</b> ${customer_phone}\n<b>Amount:</b> ₹${finalTotal}\n\nPlease confirm this payment in the Admin Orders panel.`;
+      sendTelegramMessage(msg);
+    }
+
     res.json({ success: true, order });
   } catch (err) {
     console.error('Order placement error:', err);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShoppingBag, X, Plus, Minus, Trash2, ArrowLeft, Send, CheckCircle2, MapPin, Truck, Check, RefreshCw, Edit, Ticket } from 'lucide-react';
@@ -77,13 +78,14 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const { user, profile } = useUserStore();
   const { addToast } = useToastStore();
 
-  const [step, setStep] = useState<'cart' | 'checkout' | 'success'>('cart');
+  const [step, setStep] = useState<'cart' | 'checkout' | 'upi_payment' | 'success'>('cart');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryType, setDeliveryType] = useState<'pickup' | 'delivery'>('pickup');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [placedOrderId, setPlacedOrderId] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi'>('cod');
   
   // Delivery distance zone selection state: 'local' (<= 8km) or 'domestic' (> 8km)
   const [distanceMode, setDistanceMode] = useState<'local' | 'domestic'>('local');
@@ -819,7 +821,9 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
           customer_name: customerName,
           customer_phone: customerPhone,
           user_id: user?.id || null,
-          order_source: 'website'
+          order_source: 'website',
+          payment_method: paymentMethod,
+          payment_status: paymentMethod === 'upi' ? 'verification_pending' : 'pending'
         })
       });
 
@@ -829,8 +833,13 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       }
 
       setPlacedOrderId(data.order.id);
-      setStep('success');
-      clearCart();
+      if (paymentMethod === 'upi') {
+        setStep('upi_payment');
+      } else {
+        setStep('success');
+        clearCart();
+        addToast('Order placed successfully!', 'sweet');
+      }
       addToast('Order placed successfully!', 'sweet');
     } catch (err: any) {
       addToast(err.message || 'Failed to place order', 'error');
@@ -1439,12 +1448,79 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                     )}
                     </div>
 
+                    <div className="space-y-3">
+                      <h3 className="text-[11px] font-black uppercase tracking-widest text-brand-dark flex items-center gap-2">
+                        <Check size={14} className="text-brand" />
+                        Payment Method
+                      </h3>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('cod')}
+                          className={`p-4 rounded-2xl border text-left transition-all ${
+                            paymentMethod === 'cod'
+                              ? 'border-brand bg-brand/5 shadow-soft ring-1 ring-brand/20'
+                              : 'border-brand/10 hover:border-brand/30 bg-white/50'
+                          }`}
+                        >
+                          <p className="text-xs font-bold text-brand-dark mb-1">Cash / WhatsApp</p>
+                          <p className="text-[9px] text-brand-dark/60 leading-relaxed">Pay offline or later</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('upi')}
+                          className={`p-4 rounded-2xl border text-left transition-all ${
+                            paymentMethod === 'upi'
+                              ? 'border-brand bg-brand/5 shadow-soft ring-1 ring-brand/20'
+                              : 'border-brand/10 hover:border-brand/30 bg-white/50'
+                          }`}
+                        >
+                          <p className="text-xs font-bold text-brand-dark mb-1">UPI Online</p>
+                          <p className="text-[9px] text-brand-dark/60 leading-relaxed">Pay via GPay, PhonePe, Paytm</p>
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Checkout Info note */}
-                                    <div className="bg-white/60 p-5 rounded-3xl border border-brand/5 shadow-soft">
-                                      <p className="text-[10px] font-semibold text-brand-dark/65 leading-relaxed">
-                                        📍 <strong>Order Confirmation:</strong> Once you click the "Confirm Order" button below, your order will be created and you will be redirected to WhatsApp to finalize your payment and schedule your delivery.
-                                      </p>
-                                    </div>
+                    <div className="bg-white/60 p-5 rounded-3xl border border-brand/5 shadow-soft">
+                      <p className="text-[10px] font-semibold text-brand-dark/65 leading-relaxed">
+                        📍 <strong>Order Confirmation:</strong> Once you click the "Confirm Order" button below, your order will be created. {paymentMethod === 'cod' ? 'You will be redirected to WhatsApp to finalize your payment and schedule your delivery.' : 'You will be prompted to complete the UPI payment.'}
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+                {/* STEP UPI: PAYMENT VIEW */}
+                {step === 'upi_payment' && (
+                  <motion.div
+                    key="upi-step"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex flex-col items-center justify-center py-6 text-center space-y-6"
+                  >
+                    <div className="bg-white p-4 rounded-3xl shadow-soft inline-block border border-brand/10">
+                      <QRCodeCanvas
+                        value={`upi://pay?pa=${getSetting('upi_id', '')}&pn=${getSetting('business_name', 'Jars of Joy')}&am=${total}&cu=INR&tr=${placedOrderId}`}
+                        size={200}
+                        level="H"
+                        includeMargin={true}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="font-black text-brand-dark text-lg">Pay ₹{total} via UPI</h3>
+                      <p className="text-[10px] text-brand-dark/60 max-w-[250px] mx-auto leading-relaxed">
+                        Scan this QR code with any UPI app (GPay, PhonePe, Paytm). Once you complete the payment, click the button below.
+                      </p>
+                    </div>
+                    <Button3D
+                      onClick={() => {
+                        setStep('success');
+                        clearCart();
+                        addToast('Payment marked as pending verification!', 'sweet');
+                      }}
+                      className="w-full max-w-[200px] h-12 text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle2 size={16} /> I Have Paid
+                    </Button3D>
                   </motion.div>
                 )}
 
@@ -1461,9 +1537,13 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                     </div>
 
                     <div className="space-y-2 max-w-sm">
-                      <h3 className="heading-serif text-2xl font-black text-brand-dark">Sweetness Confirmed!</h3>
+                      <h3 className="heading-serif text-2xl font-black text-brand-dark">
+                        {paymentMethod === 'upi' ? 'Payment Verifying' : 'Sweetness Confirmed!'}
+                      </h3>
                       <p className="text-xs font-semibold text-brand-dark/55 leading-relaxed">
-                        Your order has been recorded. Let's redirect to WhatsApp to send your receipt and confirm delivery details.
+                        {paymentMethod === 'upi'
+                          ? 'Congrats, your payment is under verification and you will be notified shortly. You can also send the receipt to WhatsApp.'
+                          : 'Your order has been recorded. Let\'s redirect to WhatsApp to send your receipt and confirm delivery details.'}
                       </p>
                     </div>
 

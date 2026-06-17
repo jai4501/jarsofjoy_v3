@@ -90,16 +90,24 @@ export const AdminOrders = () => {
         .single();
       const backendUrl = (urlData as any)?.value || `http://${window.location.hostname}:3001`;
 
-      const { error } = await (supabase.from('payments') as any)
-        .update({ 
-          status: 'verified',
-          verified_by: user?.id,
-          verified_at: new Date().toISOString(),
-          admin_notes: 'Verified via Admin Panel'
-        })
-        .eq('id', paymentId);
+      if (paymentId) {
+        const { error } = await (supabase.from('payments') as any)
+          .update({ 
+            status: 'verified',
+            verified_by: user?.id,
+            verified_at: new Date().toISOString(),
+            admin_notes: 'Verified via Admin Panel'
+          })
+          .eq('id', paymentId);
+        if (error) throw error;
+      }
 
-      if (error) throw error;
+      // Also update order payment_status directly
+      const { error: orderError } = await supabase
+        .from('orders')
+        .update({ payment_status: 'verified' })
+        .eq('id', orderId);
+      if (orderError) throw orderError;
       
       // Also update order status via backend
       const responseStatus = await fetch(`${backendUrl}/api/orders/update-status`, {
@@ -107,7 +115,7 @@ export const AdminOrders = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId: orderId,
-          status: 'confirmed',
+          status: 'preparing',
           userId: user?.id
         })
       });
@@ -276,7 +284,7 @@ export const AdminOrders = () => {
                     </div>
 
                     {/* SQL Enhancement: Payment Verification Section */}
-                    {payment && (
+                    {(payment || order.payment_method === 'upi') && (
                       <div className="bg-purple-50/50 border-y border-purple-100 p-8 flex flex-col md:flex-row items-center justify-between gap-8">
                          <div className="flex items-center gap-6">
                             <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center shadow-inner">
@@ -285,31 +293,33 @@ export const AdminOrders = () => {
                             <div>
                                <p className="text-[10px] font-black text-purple-400 uppercase tracking-[0.2em] mb-0.5">UPI Verification</p>
                                <div className="flex items-center gap-2">
-                                  <span className={`w-2 h-2 rounded-full ${payment.status === 'verified' ? 'bg-green-500' : 'bg-purple-500 animate-pulse'}`} />
-                                  <p className="font-black text-brand-dark text-sm uppercase">Payment {payment.status}</p>
+                                  <span className={`w-2 h-2 rounded-full ${order.payment_status === 'verified' || payment?.status === 'verified' ? 'bg-green-500' : 'bg-purple-500 animate-pulse'}`} />
+                                  <p className="font-black text-brand-dark text-sm uppercase">Payment {order.payment_status || payment?.status || 'Pending'}</p>
                                </div>
                             </div>
                          </div>
 
-                         <div className="flex items-center gap-4 w-full md:w-auto">
-                            {payment.screenshot_url ? (
-                              <button 
-                                onClick={() => setSelectedScreenshot(payment.screenshot_url)}
-                                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-white text-purple-600 rounded-xl border border-purple-100 font-black text-[10px] uppercase tracking-widest hover:bg-purple-50 transition-all shadow-sm"
-                              >
-                                <Eye size={16} /> View Screenshot
-                              </button>
-                            ) : (
-                              <span className="text-[10px] font-bold text-purple-400/50 uppercase tracking-widest">No screenshot uploaded</span>
-                            )}
-                            {payment.status !== 'verified' && (
-                              <button 
-                                onClick={() => verifyPayment(order.id, payment.id)}
-                                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-purple-200 hover:scale-105 active:scale-95 transition-all"
-                              >
-                                <CheckCircle2 size={16} /> Confirm Receipt
-                              </button>
-                            )}
+                         <div className="flex flex-col items-end gap-2 w-full md:w-auto">
+                            <div className="flex items-center gap-4">
+                              {payment?.screenshot_url ? (
+                                <button 
+                                  onClick={() => setSelectedScreenshot(payment.screenshot_url)}
+                                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-white text-purple-600 rounded-xl border border-purple-100 font-black text-[10px] uppercase tracking-widest hover:bg-purple-50 transition-all shadow-sm"
+                                >
+                                  <Eye size={16} /> View Screenshot
+                                </button>
+                              ) : (
+                                <span className="text-[10px] font-bold text-purple-400/50 uppercase tracking-widest">No screenshot</span>
+                              )}
+                              {(order.payment_status !== 'verified' && payment?.status !== 'verified') && (
+                                <button 
+                                  onClick={() => verifyPayment(order.id, payment?.id)}
+                                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-purple-200 hover:scale-105 active:scale-95 transition-all"
+                                >
+                                  <CheckCircle2 size={16} /> Confirm Receipt
+                                </button>
+                              )}
+                            </div>
                          </div>
                       </div>
                     )}
