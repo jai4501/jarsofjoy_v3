@@ -841,6 +841,19 @@ app.post('/api/orders/place', async (req, res) => {
 
     const finalTotal = subtotal - discount + deliveryFee;
 
+    // Generate custom Order ID: JOJ-SFOID-YYYY-MM-DD-0001
+    const todayStr = new Date().toISOString().split('T')[0];
+    const prefix = order_source === 'pos' ? 'POSOID' : order_source === 'website' ? 'SFOID' : 'WAOID';
+    
+    const { count, error: countError } = await serverSupabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', `${todayStr}T00:00:00Z`)
+      .lt('created_at', `${todayStr}T23:59:59Z`);
+      
+    const seq = String((count || 0) + 1).padStart(4, '0');
+    const displayId = `JOJ-${prefix}-${todayStr}-${seq}`;
+
     // 1. Insert order
     const { data: order, error: orderError } = await serverSupabase
       .from('orders')
@@ -859,7 +872,8 @@ app.post('/api/orders/place', async (req, res) => {
         payment_method: payment_method,
         payment_status: payment_status,
         order_source: order_source,
-        delivery_type: delivery_type
+        delivery_type: delivery_type,
+        metadata: { display_id: displayId }
       }])
       .select()
       .single();
@@ -885,7 +899,7 @@ app.post('/api/orders/place', async (req, res) => {
     if (itemsError) throw itemsError;
 
     if (payment_method === 'upi' && payment_status === 'verification_pending') {
-      const msg = `🔔 <b>New UPI Payment Pending</b>\n\n<b>Order ID:</b> #${order.id.slice(0, 8).toUpperCase()}\n<b>Name:</b> ${customer_name}\n<b>Phone:</b> ${customer_phone}\n<b>Amount:</b> ₹${finalTotal}\n\nPlease confirm this payment in the Admin Orders panel.`;
+      const msg = `🔔 <b>New UPI Payment Pending</b>\n\n<b>Order ID:</b> ${displayId}\n<b>Name:</b> ${customer_name}\n<b>Phone:</b> ${customer_phone}\n<b>Amount:</b> ₹${finalTotal}\n\nPlease confirm this payment in the Admin Orders panel.`;
       sendTelegramMessage(msg);
     }
 

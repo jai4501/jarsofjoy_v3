@@ -14,6 +14,7 @@ export const AdminOrders = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
+  const [utrInputs, setUtrInputs] = useState<{ [key: string]: string }>({});
   
   const { addToast } = useToastStore();
   const { settings } = useSettingsStore();
@@ -81,7 +82,11 @@ export const AdminOrders = () => {
     }
   };
 
-  const verifyPayment = async (orderId: string, paymentId: string) => {
+  const verifyPayment = async (orderId: string, paymentId: string | undefined, utr: string) => {
+    if (!utr || utr.trim().length < 6) {
+      addToast('Please enter a valid UTR number to confirm payment.', 'error');
+      return;
+    }
     try {
       const { data: urlData } = await supabase
         .from('site_content')
@@ -103,9 +108,8 @@ export const AdminOrders = () => {
       }
 
       // Also update order payment_status directly
-      const { error: orderError } = await supabase
-        .from('orders')
-        .update({ payment_status: 'verified' })
+      const { error: orderError } = await (supabase.from('orders') as any)
+        .update({ payment_status: 'verified', payment_reference: utr })
         .eq('id', orderId);
       if (orderError) throw orderError;
       
@@ -146,10 +150,12 @@ export const AdminOrders = () => {
   };
 
   const filteredOrders = orders.filter(o => {
+    const searchLower = searchTerm.toLowerCase();
     const matchesSearch = (
-      (o.id || '').includes(searchTerm) || 
-      (o.customer_phone || '').includes(searchTerm) || 
-      ((o.customer_name || '').toLowerCase().includes(searchTerm.toLowerCase()))
+      (o.id || '').toLowerCase().includes(searchLower) || 
+      (o.metadata?.display_id || '').toLowerCase().includes(searchLower) ||
+      (o.customer_phone || '').includes(searchLower) || 
+      ((o.customer_name || '').toLowerCase().includes(searchLower))
     );
     const matchesStatus = statusFilter === 'all' || o.status === statusFilter;
     return matchesSearch && matchesStatus;
@@ -255,7 +261,7 @@ export const AdminOrders = () => {
                         <div className="space-y-1">
                           <div className="flex items-center gap-3">
                             <span className="text-[10px] font-black uppercase tracking-widest text-brand/40">Order Reference</span>
-                            <span className="bg-brand text-white px-3 py-1 rounded-full text-[10px] font-black tracking-tighter shadow-md group-hover:rotate-2 transition-transform">#{order.id?.slice(0, 8).toUpperCase() || 'N/A'}</span>
+                            <span className="bg-brand text-white px-3 py-1 rounded-full text-[10px] font-black tracking-tighter shadow-md group-hover:rotate-2 transition-transform">{order.metadata?.display_id || '#' + (order.id?.slice(0, 8).toUpperCase() || 'N/A')}</span>
                           </div>
                           <h3 className="heading-serif text-3xl text-brand-dark">{order.customer_name || 'Walk-in Customer'}</h3>
                           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2">
@@ -312,12 +318,21 @@ export const AdminOrders = () => {
                                 <span className="text-[10px] font-bold text-purple-400/50 uppercase tracking-widest">No screenshot</span>
                               )}
                               {(order.payment_status !== 'verified' && payment?.status !== 'verified') && (
-                                <button 
-                                  onClick={() => verifyPayment(order.id, payment?.id)}
-                                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-purple-200 hover:scale-105 active:scale-95 transition-all"
-                                >
-                                  <CheckCircle2 size={16} /> Confirm Receipt
-                                </button>
+                                <div className="flex flex-col gap-2">
+                                  <input 
+                                    type="text"
+                                    placeholder="Enter UTR Number"
+                                    value={utrInputs[order.id] || ''}
+                                    onChange={(e) => setUtrInputs(prev => ({...prev, [order.id]: e.target.value}))}
+                                    className="px-4 py-2 border-2 border-purple-100 rounded-xl text-xs font-bold text-brand-dark outline-none focus:border-purple-300 transition-all"
+                                  />
+                                  <button 
+                                    onClick={() => verifyPayment(order.id, payment?.id, utrInputs[order.id])}
+                                    className="flex items-center justify-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-purple-200 hover:scale-105 active:scale-95 transition-all"
+                                  >
+                                    <CheckCircle2 size={16} /> Confirm Receipt
+                                  </button>
+                                </div>
                               )}
                             </div>
                          </div>

@@ -85,7 +85,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [placedOrderId, setPlacedOrderId] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi'>('cod');
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi'>('upi');
   
   // Delivery distance zone selection state: 'local' (<= 8km) or 'domestic' (> 8km)
   const [distanceMode, setDistanceMode] = useState<'local' | 'domestic'>('local');
@@ -772,6 +772,11 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       addToast('Both your email and WhatsApp number must be verified to place storefront orders. Please check your profile.', 'error');
       return;
     }
+    
+    if (addresses.length === 0) {
+      addToast('Please add at least one address to proceed to checkout.', 'error');
+      return;
+    }
 
     if (!customerName.trim()) {
       addToast('Please enter your name', 'error');
@@ -832,7 +837,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
         throw new Error(data.error || 'Failed to place order securely.');
       }
 
-      setPlacedOrderId(data.order.id);
+      setPlacedOrderId(data.order.metadata?.display_id || data.order.id);
       if (paymentMethod === 'upi') {
         setStep('upi_payment');
       } else {
@@ -849,7 +854,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   };
 
   const handleWhatsAppRedirect = () => {
-    const orderIdShort = placedOrderId.slice(0, 8).toUpperCase();
+    const orderIdShort = placedOrderId.startsWith('JOJ') ? placedOrderId : placedOrderId.slice(0, 8).toUpperCase();
     const itemsDetails = items
       .map((item) => `• ${item.name} (x${item.quantity}) - ₹${item.price * item.quantity}`)
       .join('\n');
@@ -1453,19 +1458,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                         <Check size={14} className="text-brand" />
                         Payment Method
                       </h3>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod('cod')}
-                          className={`p-4 rounded-2xl border text-left transition-all ${
-                            paymentMethod === 'cod'
-                              ? 'border-brand bg-brand/5 shadow-soft ring-1 ring-brand/20'
-                              : 'border-brand/10 hover:border-brand/30 bg-white/50'
-                          }`}
-                        >
-                          <p className="text-xs font-bold text-brand-dark mb-1">Cash / WhatsApp</p>
-                          <p className="text-[9px] text-brand-dark/60 leading-relaxed">Pay offline or later</p>
-                        </button>
+                      <div className="grid grid-cols-1 gap-3">
                         <button
                           type="button"
                           onClick={() => setPaymentMethod('upi')}
@@ -1484,7 +1477,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                     {/* Checkout Info note */}
                     <div className="bg-white/60 p-5 rounded-3xl border border-brand/5 shadow-soft">
                       <p className="text-[10px] font-semibold text-brand-dark/65 leading-relaxed">
-                        📍 <strong>Order Confirmation:</strong> Once you click the "Confirm Order" button below, your order will be created. {paymentMethod === 'cod' ? 'You will be redirected to WhatsApp to finalize your payment and schedule your delivery.' : 'You will be prompted to complete the UPI payment.'}
+                        📍 <strong>Order Confirmation:</strong> Once you click the "Confirm Order" button below, your order will be created. You will be prompted to complete the UPI payment.
                       </p>
                     </div>
                   </motion.div>
@@ -1505,12 +1498,21 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                         includeMargin={true}
                       />
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-4 w-full px-6">
                       <h3 className="font-black text-brand-dark text-lg">Pay ₹{total} via UPI</h3>
-                      <p className="text-[10px] text-brand-dark/60 max-w-[250px] mx-auto leading-relaxed">
-                        Scan this QR code with any UPI app (GPay, PhonePe, Paytm). Once you complete the payment, click the button below.
+                      <p className="text-[10px] text-brand-dark/60 leading-relaxed">
+                        Scan the QR code above or tap the button below to pay directly via GPay, PhonePe, or Paytm.
                       </p>
+                      
+                      {/* Direct UPI Intent Link for Mobile */}
+                      <a 
+                        href={`upi://pay?pa=${getSetting('upi_id', '')}&pn=${getSetting('business_name', 'Jars of Joy')}&am=${total}&cu=INR&tr=${placedOrderId}`}
+                        className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all"
+                      >
+                        🚀 Open UPI App to Pay
+                      </a>
                     </div>
+                    
                     <Button3D
                       onClick={() => {
                         setStep('success');
