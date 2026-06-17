@@ -172,7 +172,10 @@ export const Favorites = () => {
 
                     {/* Bottom row: price and add button */}
                     <div className="flex items-center justify-between mt-auto pt-3 border-t border-brand/5">
-                      <span className="text-lg sm:text-xl font-black text-brand tracking-tighter">₹{product.price}</span>
+                        <div className="flex flex-col items-center leading-none">
+                          <span className="text-[10px] sm:text-xs font-black text-brand-dark/30 line-through tracking-wider">₹{Math.round(product.price * 1.3)}</span>
+                          <span className="text-lg sm:text-xl font-black text-brand tracking-tighter mt-0.5">₹{product.price}</span>
+                        </div>
                       
                       {/* Add Button */}
                       <div>
@@ -348,7 +351,8 @@ export const Favorites = () => {
                        {selectedProduct.name}
                     </h2>
                     <div className="flex items-center gap-3">
-                      <div className="bg-brand/5 border border-brand/10 rounded-2xl px-4 py-1 flex items-center justify-center">
+                      <div className="bg-brand/5 border border-brand/10 rounded-2xl px-4 py-1.5 flex items-center justify-center gap-2.5 shadow-inner">
+                        <span className="text-xs font-black text-brand-dark/30 line-through tracking-wider mt-0.5">₹{Math.round(selectedProduct.price * 1.3)}</span>
                         <span className="text-xl md:text-2xl font-black text-brand tracking-tighter">₹{selectedProduct.price}</span>
                       </div>
                       <span className="text-[9px] font-black text-brand-dark/30 uppercase tracking-[0.2em]">Inclusive of all taxes</span>
@@ -385,9 +389,10 @@ export const Favorites = () => {
                               animate={qty > 0 ? { scale: [1, 1.02, 1], transition: { duration: 0.2 } } : {}}
                               className={`shrink-0 w-36 p-5 rounded-[2rem] border-2 transition-all snap-start flex flex-col justify-between items-center text-center gap-4 ${qty > 0 ? 'bg-brand/10 border-brand shadow-luxury' : 'bg-brand/5 border-transparent hover:border-brand/20 hover:bg-white shadow-soft'}`}
                             >
-                              <div className="space-y-1 mt-1">
-                                <p className="font-black text-brand-dark text-xs tracking-tight uppercase">{v.name}</p>
-                                <p className="font-black text-brand text-sm tracking-tighter">₹{v.price}</p>
+                              <div className="flex flex-col items-center mt-1">
+                                <p className="font-black text-brand-dark text-xs tracking-tight uppercase mb-1.5">{v.name}</p>
+                                <span className="text-[9px] font-black text-brand-dark/30 line-through tracking-wider leading-none">₹{Math.round(v.price * 1.3)}</span>
+                                <p className="font-black text-brand text-sm tracking-tighter leading-none mt-0.5">₹{v.price}</p>
                               </div>
                               
                               {qty > 0 ? (

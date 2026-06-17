@@ -200,12 +200,18 @@ export const generateMenuPDF = async (products: Product[], businessInfo: Record<
       doc.setTextColor(BRAND_COLOR[0], BRAND_COLOR[1], BRAND_COLOR[2]);
       doc.setFont('helvetica', 'bold');
       if (p.variations && p.variations.length > 0) {
-        doc.setFontSize(9);
+        doc.setFontSize(8);
         p.variations.forEach((v, vIdx) => {
-          doc.text(`${v.name}: Rs.${v.price}`, 185, currentY + 12 + (vIdx * 6), { align: 'right' });
+          const mrp = Math.round(Number(v.price) * 1.3);
+          doc.text(`${v.name}: Rs.${v.price} (MRP: ${mrp})`, 190, currentY + 12 + (vIdx * 6), { align: 'right' });
         });
       } else {
+        const mrp = Math.round(Number(p.price) * 1.3);
+        doc.setFontSize(9);
+        doc.setTextColor(150, 150, 150);
+        doc.text(`MRP: Rs.${mrp}`, 185, currentY + 15, { align: 'right' });
         doc.setFontSize(16);
+        doc.setTextColor(BRAND_COLOR[0], BRAND_COLOR[1], BRAND_COLOR[2]);
         doc.text(`Rs.${p.price}`, 185, currentY + 22, { align: 'right' });
       }
 
@@ -291,17 +297,17 @@ export const generateInvoicePDF = async (order: Order, businessInfo: Record<stri
     idx + 1,
     item.name,
     item.quantity,
-    `Rs. ${Number(item.price).toFixed(2)}`,
+    `Rs. ${Number(item.price).toFixed(2)}\n(MRP: Rs. ${Math.round(Number(item.price) * 1.3).toFixed(2)})`,
     `Rs. ${(item.quantity * item.price).toFixed(2)}`
   ]);
 
   autoTable(doc, {
     startY: detailsY + 45,
-    head: [['#', 'Description', 'Qty', 'Unit Price', 'Total']],
+    head: [['#', 'Description', 'Qty', 'Unit Price\n(Offer)', 'Total']],
     body: tableData,
     headStyles: { fillColor: BRAND_COLOR, textColor: [255, 255, 255], fontStyle: 'bold' },
     styles: { fontSize: 10, cellPadding: 5 },
-    columnStyles: { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 90 }, 2: { halign: 'center', cellWidth: 20 }, 3: { halign: 'right', cellWidth: 35 }, 4: { halign: 'right', cellWidth: 35 } },
+    columnStyles: { 0: { halign: 'center', cellWidth: 10 }, 1: { cellWidth: 80 }, 2: { halign: 'center', cellWidth: 20 }, 3: { halign: 'right', cellWidth: 45 }, 4: { halign: 'right', cellWidth: 35 } },
     alternateRowStyles: { fillColor: [250, 250, 250] }
   });
 

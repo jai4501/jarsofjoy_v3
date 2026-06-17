@@ -986,7 +986,10 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                             {/* Item details */}
                             <div className="flex-1 min-w-0">
                               <h4 className="font-bold text-brand-dark text-sm sm:text-base leading-tight truncate">{item.name}</h4>
-                              <p className="text-brand font-black text-xs sm:text-sm mt-0.5">₹{item.price * item.quantity}</p>
+                              <div className="flex flex-col items-start leading-none mt-1">
+                                <span className="text-[9px] font-black text-brand-dark/30 line-through tracking-wider">₹{Math.round(item.price * 1.3) * item.quantity}</span>
+                                <p className="text-brand font-black text-xs sm:text-sm mt-0.5">₹{item.price * item.quantity}</p>
+                              </div>
                               
                               {/* Counter buttons */}
                               <div className="flex items-center gap-3 mt-3">

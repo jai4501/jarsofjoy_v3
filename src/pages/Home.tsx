@@ -318,7 +318,10 @@ export const Home = () => {
         <div className="flex-grow flex flex-col justify-between">
           <div className="space-y-1 mb-3 text-center">
             <h4 className="font-serif text-lg font-black text-brand-dark group-hover:text-brand transition-colors leading-tight">{product.name}</h4>
-            <p className="text-brand font-black text-base">₹{product.price}</p>
+            <div className="flex items-center justify-center gap-1.5 leading-none mt-1">
+              <span className="text-[10px] font-black text-brand-dark/30 line-through tracking-wider">₹{Math.round(product.price * 1.3)}</span>
+              <p className="text-brand font-black text-base leading-none">₹{product.price}</p>
+            </div>
           </div>
 
           <div className="w-full">
@@ -830,7 +833,8 @@ export const Home = () => {
                        {selectedProduct.name}
                     </h2>
                     <div className="flex items-center gap-3">
-                      <div className="bg-brand/5 border border-brand/10 rounded-2xl px-4 py-1 flex items-center justify-center">
+                      <div className="bg-brand/5 border border-brand/10 rounded-2xl px-4 py-1.5 flex items-center justify-center gap-2.5 shadow-inner">
+                        <span className="text-xs font-black text-brand-dark/30 line-through tracking-wider mt-0.5">₹{Math.round(selectedProduct.price * 1.3)}</span>
                         <span className="text-xl md:text-2xl font-black text-brand tracking-tighter">₹{selectedProduct.price}</span>
                       </div>
                       <span className="text-[9px] font-black text-brand-dark/30 uppercase tracking-[0.2em]">Inclusive of all taxes</span>
@@ -867,9 +871,10 @@ export const Home = () => {
                               animate={qty > 0 ? { scale: [1, 1.02, 1], transition: { duration: 0.2 } } : {}}
                               className={`shrink-0 w-36 p-5 rounded-[2rem] border-2 transition-all snap-start flex flex-col justify-between items-center text-center gap-4 ${qty > 0 ? 'bg-brand/10 border-brand shadow-luxury' : 'bg-brand/5 border-transparent hover:border-brand/20 hover:bg-white shadow-soft'}`}
                             >
-                              <div className="space-y-1 mt-1">
-                                <p className="font-black text-brand-dark text-xs tracking-tight uppercase">{v.name}</p>
-                                <p className="font-black text-brand text-sm tracking-tighter">₹{v.price}</p>
+                              <div className="flex flex-col items-center mt-1">
+                                <p className="font-black text-brand-dark text-xs tracking-tight uppercase mb-1.5">{v.name}</p>
+                                <span className="text-[9px] font-black text-brand-dark/30 line-through tracking-wider leading-none">₹{Math.round(v.price * 1.3)}</span>
+                                <p className="font-black text-brand text-sm tracking-tighter leading-none mt-0.5">₹{v.price}</p>
                               </div>
                               
                               {qty > 0 ? (

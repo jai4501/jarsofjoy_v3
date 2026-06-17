@@ -285,7 +285,10 @@ export const AdminPOS = () => {
                   )}
                 </div>
                 <div className="flex justify-between items-center mt-2 sm:mt-3">
-                  <p className="text-brand font-black text-base sm:text-lg">₹{product.price}</p>
+                  <div className="flex flex-col items-start leading-none mt-1">
+                    <span className="text-[9px] font-black text-brand-dark/30 line-through tracking-wider">₹{Math.round(product.price * 1.3)}</span>
+                    <p className="text-brand font-black text-base sm:text-lg mt-0.5">₹{product.price}</p>
+                  </div>
                   <div className="w-7 h-7 sm:w-8 sm:h-8 bg-brand text-white rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg shadow-brand/20 group-hover:scale-110 transition-transform">
                     <Plus size={14} />
                   </div>
@@ -383,7 +386,10 @@ export const AdminPOS = () => {
                       <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-brand shadow-soft group-hover:scale-110 transition-transform"><Check size={18} /></div>
                       <span className="text-lg font-black text-brand-dark">{v.name}</span>
                     </div>
-                    <span className="text-xl font-black text-brand tracking-tighter">₹{v.price}</span>
+                    <div className="flex flex-col items-end leading-none mt-1">
+                      <span className="text-[10px] font-black text-brand-dark/30 line-through tracking-wider">₹{Math.round(v.price * 1.3)}</span>
+                      <span className="text-xl font-black text-brand tracking-tighter mt-0.5">₹{v.price}</span>
+                    </div>
                   </button>
                 ))}
               </div>

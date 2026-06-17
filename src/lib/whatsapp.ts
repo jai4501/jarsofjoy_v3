@@ -62,7 +62,7 @@ export const sendWhatsAppNotification = async (to: string, message: string) => {
 
 export const formatOrderMessage = (order: Record<string, unknown>, customerName: string) => {
   const itemsList = (order.items as Record<string, unknown>[])
-    .map((item: Record<string, unknown>) => `• ${item.name} x${item.quantity} (₹${Number(item.price) * Number(item.quantity)})`)
+    .map((item: Record<string, unknown>) => `• ${item.name} x${item.quantity}\n  ~₹${Math.round(Number(item.price) * 1.3) * Number(item.quantity)}~  *₹${Number(item.price) * Number(item.quantity)}*`)
     .join('\n');
 
   return `*New Order from Jars of Joy!* 🍯🍰\n\n` +
