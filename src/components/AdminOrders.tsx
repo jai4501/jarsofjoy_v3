@@ -224,9 +224,12 @@ export const AdminOrders = () => {
       {/* Orders List */}
       <div className="grid grid-cols-1 gap-8">
         {loading && orders.length === 0 ? (
-          <div className="py-40 text-center space-y-4 opacity-20">
-            <RefreshCw className="animate-spin mx-auto text-brand" size={48} />
-            <p className="heading-cursive text-3xl font-black">Scanning the kitchen...</p>
+          <div className="py-40 flex flex-col items-center justify-center">
+            <div className="relative w-[120px] h-[120px] mb-[40px] animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite]">
+              <div className="absolute -inset-[12px] border-[3px] border-transparent border-t-[#863bff] border-b-[#ff3b86] rounded-full animate-[spin_1.5s_cubic-bezier(0.68,-0.55,0.265,1.55)_infinite]" />
+              <img src="/business_logo_new.webp" alt="Jars of Joy Logo" className="w-full h-full object-cover rounded-full shadow-[0_20px_40px_-10px_rgba(134,59,255,0.3)]" />
+            </div>
+            <div className="text-[#863bff] font-black tracking-[0.25em] uppercase text-[11px] animate-[pulse_2s_ease-in-out_infinite]">Baking Joy...</div>
           </div>
         ) : filteredOrders.length === 0 ? (
           <div className="py-40 text-center premium-card max-w-2xl mx-auto border-dashed">
