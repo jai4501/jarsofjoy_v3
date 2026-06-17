@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingBag, X, Plus, Minus, Trash2, ArrowLeft, Send, CheckCircle2, Check, RefreshCw, Edit, Ticket } from 'lucide-react';
+import { ShoppingBag, X, Plus, Minus, Trash2, ArrowLeft, Send, CheckCircle2, Check, RefreshCw, Edit, Ticket, Clock, MapPin } from 'lucide-react';
 import { useCartStore } from '../store/useCartStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useUserStore } from '../store/useUserStore';
@@ -86,6 +86,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const [submitting, setSubmitting] = useState(false);
   const [placedOrderId, setPlacedOrderId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi'>('upi');
+  const [deliveryTimeRange, setDeliveryTimeRange] = useState<'standard' | 'evening' | 'weekend'>('standard');
   
   // Delivery distance zone selection state: 'local' (<= 8km) or 'domestic' (> 8km)
   const [distanceMode, setDistanceMode] = useState<'local' | 'domestic'>('local');
@@ -348,15 +349,10 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   // Calculate dynamic delivery fee
   const getDeliveryFee = () => {
     if (deliveryType !== 'delivery') return 0;
-    const now = new Date();
-    const day = now.getDay();
-    const hour = now.getHours();
-    const isWeekend = day === 0 || day === 6;
-    const isAfter7PM = hour >= 19;
     const isAbove399 = total > 399;
     
     if (distanceMode === 'local') {
-      const isEligibleForFree = isAbove399 && (isWeekend || isAfter7PM);
+      const isEligibleForFree = isAbove399 && (deliveryTimeRange === 'evening' || deliveryTimeRange === 'weekend');
       return isEligibleForFree ? 0 : 100;
     } else {
       // 60rs for 500gm, 120rs for 1kg and so on
@@ -971,6 +967,38 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                       </div>
                     ) : (
                       <>
+                        {/* Free Delivery Progress Banner */}
+                        {deliveryType === 'delivery' && distanceMode === 'local' && (
+                          <div className="bg-gradient-to-r from-brand/10 to-brand/5 p-4 rounded-3xl border border-brand/10 shadow-sm relative overflow-hidden mb-2 animate-fade-in">
+                            {total < 399 ? (
+                              <div className="relative z-10 space-y-2">
+                                <div className="flex justify-between items-end">
+                                  <p className="text-[10px] font-black text-brand-dark leading-tight">
+                                    Add <span className="text-brand text-xs">₹{399 - total}</span> more &amp; select Evening/Weekend to unlock <span className="text-emerald-600">FREE DELIVERY!</span> 🚚
+                                  </p>
+                                </div>
+                                <div className="h-1.5 w-full bg-brand-dark/5 rounded-full overflow-hidden">
+                                  <motion.div 
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${Math.min(100, (total / 399) * 100)}%` }}
+                                    className="h-full bg-brand rounded-full"
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="relative z-10 flex items-center justify-between">
+                                <p className="text-[10px] font-black text-emerald-700 leading-tight">
+                                  ✨ You've unlocked <span className="text-emerald-600">FREE DELIVERY</span>!<br/>
+                                  <span className="text-[8px] text-emerald-600/70 font-bold tracking-widest uppercase mt-0.5 block">Just choose Evening or Weekend slot below.</span>
+                                </p>
+                                <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shrink-0 ml-2">
+                                  <CheckCircle2 size={16} />
+                                </div>
+                              </div>
+                            )}
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-white/40 blur-2xl rounded-full -translate-y-10 translate-x-10 pointer-events-none" />
+                          </div>
+                        )}
                         {items.map((item) => (
                           <div 
                             key={item.id} 
@@ -1042,6 +1070,56 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                             {appliedCoupon ? "Manage" : "Apply"}
                           </button>
                         </div>
+
+                        {/* Delivery Time Range Selector */}
+                        {deliveryType === 'delivery' && (
+                          <div className="mt-4 bg-white/60 p-4 rounded-3xl border border-brand/5 shadow-soft space-y-3 relative z-10">
+                            <h3 className="text-[10px] font-black uppercase tracking-widest text-brand-dark flex items-center gap-2">
+                              <Clock size={14} className="text-brand" />
+                              Select Delivery Time Slot
+                            </h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setDeliveryTimeRange('standard')}
+                                className={`p-3 rounded-2xl border text-left transition-all ${
+                                  deliveryTimeRange === 'standard'
+                                    ? 'border-brand bg-brand/5 ring-1 ring-brand/20'
+                                    : 'border-brand/10 bg-white/50 hover:border-brand/30'
+                                }`}
+                              >
+                                <p className="text-xs font-bold text-brand-dark">Standard</p>
+                                <p className="text-[9px] text-brand-dark/50 mt-1">9 AM - 6 PM</p>
+                              </button>
+                              
+                              <button
+                                type="button"
+                                onClick={() => setDeliveryTimeRange('evening')}
+                                className={`p-3 rounded-2xl border text-left transition-all ${
+                                  deliveryTimeRange === 'evening'
+                                    ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500/20'
+                                    : 'border-brand/10 bg-white/50 hover:border-emerald-500/30'
+                                }`}
+                              >
+                                <p className="text-xs font-bold text-emerald-700">Evening</p>
+                                <p className="text-[9px] text-emerald-600/80 mt-1">After 7 PM (Free {'>'} ₹399)</p>
+                              </button>
+                              
+                              <button
+                                type="button"
+                                onClick={() => setDeliveryTimeRange('weekend')}
+                                className={`p-3 rounded-2xl border text-left transition-all sm:col-span-2 ${
+                                  deliveryTimeRange === 'weekend'
+                                    ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500/20'
+                                    : 'border-brand/10 bg-white/50 hover:border-emerald-500/30'
+                                }`}
+                              >
+                                <p className="text-xs font-bold text-emerald-700">Weekend (Sat/Sun)</p>
+                                <p className="text-[9px] text-emerald-600/80 mt-1">Free Delivery {'>'} ₹399</p>
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
                   </motion.div>
@@ -1385,55 +1463,15 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                           )}
                         </motion.div>
                         
-                        {/* Distance Mode selector (Read-Only) */}
-                        <div className="space-y-2 mt-4 animate-fade-in">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-brand-dark/50">Delivery Distance Zone</label>
-                          
-                          <div className="p-4 bg-brand-dark/5 rounded-2xl border border-brand/5 shadow-sm flex items-center justify-between">
-                            <div>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Distance from Studio</p>
-                              <div className="text-xs font-black text-brand mt-0.5">
-                                {calculatingDistance ? (
-                                  <span className="flex items-center gap-1.5 text-brand">
-                                    <RefreshCw className="animate-spin" size={12} />
-                                    Calculating...
-                                  </span>
-                                ) : calculatedDistance !== null ? (
-                                  `${calculatedDistance.toFixed(2)} km`
-                                ) : (
-                                  <span className="text-brand-dark/40 font-medium italic">Pending selection</span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-[9px] font-black uppercase tracking-widest text-brand-dark/40">Delivery Mode</p>
-                              <span className={`inline-block px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider mt-1 ${
-                                distanceMode === 'local'
-                                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 font-bold'
-                                  : 'bg-blue-50 text-blue-600 border border-blue-100 font-bold'
-                              }`}>
-                                {distanceMode === 'local' ? 'Local Same Day' : 'Domestic Shipping'}
-                              </span>
-                            </div>
-                          </div>
-                          
-                          {/* Distance Info Display Panel */}
-                          <div className="p-3.5 bg-brand/5 rounded-2xl border border-brand/10 text-[10px] font-semibold text-brand-dark/70 leading-relaxed space-y-1">
+                        {/* Delivery Banner (No Distance UI) */}
+                        <div className="mt-4 p-3 bg-brand/5 rounded-2xl border border-brand/10 text-center flex items-center justify-center">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-brand flex items-center gap-1">
                             {distanceMode === 'local' ? (
-                              <>
-                                <p className="font-bold text-brand flex items-center gap-1">📍 Local Same Day Delivery (Porter / Self)</p>
-                                <p>• Fixed delivery fee of ₹100.</p>
-                                <p>• <strong>Free Local Delivery</strong> on weekdays after 7 PM or weekends for orders above ₹399!</p>
-                              </>
+                              <><MapPin size={12}/> Local Same Day Delivery</>
                             ) : (
-                              <>
-                                <p className="font-bold text-brand flex items-center gap-1">📦 Domestic Shipping (Shiprocket)</p>
-                                <p>• Delivery fee based on weight: ₹60 per 500g.</p>
-                                <p>• Current total weight: <strong>{totalWeightGrams >= 1000 ? `${(totalWeightGrams/1000).toFixed(2)}kg` : `${totalWeightGrams}g`}</strong>.</p>
-                                <p className="text-brand/80">• Note: Any shipping charges over the actual cost will be refunded to you.</p>
-                              </>
+                              <><MapPin size={12}/> Domestic Shipping</>
                             )}
-                          </div>
+                          </span>
                         </div>
                       </>
                     )}
@@ -1458,13 +1496,6 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                           <p className="text-[9px] text-brand-dark/60 leading-relaxed">Pay via GPay, PhonePe, Paytm</p>
                         </button>
                       </div>
-                    </div>
-
-                    {/* Checkout Info note */}
-                    <div className="bg-white/60 p-5 rounded-3xl border border-brand/5 shadow-soft">
-                      <p className="text-[10px] font-semibold text-brand-dark/65 leading-relaxed">
-                        📍 <strong>Order Confirmation:</strong> Once you click the "Confirm Order" button below, your order will be created. You will be prompted to complete the UPI payment.
-                      </p>
                     </div>
                   </motion.div>
                 )}
@@ -1561,46 +1592,48 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
             {items.length > 0 && step !== 'success' && (
               <div className="border-t border-brand/10 pt-4 mt-auto space-y-4 relative z-20 bg-white/90 backdrop-blur-md p-4 sm:p-6 -mx-6 sm:-mx-8 shrink-0 shadow-[0_-8px_30px_rgb(0,0,0,0.03)]">
                 
-                {/* Professional Receipt/Pricing Summary Box */}
-                <div className="bg-white/60 p-4 rounded-3xl border border-brand/5 shadow-soft space-y-2 text-xs relative z-10">
-                  <div className="flex justify-between font-semibold text-brand-dark/60">
-                    <span>Total MRP</span>
-                    <span className="font-bold text-brand-dark line-through decoration-brand-dark/30">₹{mrpTotal}</span>
-                  </div>
-                  
-                  {mrpDiscount > 0 && (
-                    <div className="flex justify-between font-bold text-green-600">
-                      <span className="flex items-center gap-1">✨ Discount on MRP</span>
-                      <span>- ₹{mrpDiscount}</span>
-                    </div>
-                  )}
-
-                  <div className="flex justify-between font-semibold text-brand-dark/60 pt-1 border-t border-brand/5">
-                    <span>Items Subtotal</span>
-                    <span className="font-bold text-brand-dark">₹{total}</span>
-                  </div>
-                  
-                  {appliedCoupon && discount > 0 && (
-                    <div className="flex justify-between font-bold text-green-600">
-                      <span className="flex items-center gap-1">🎟️ Coupon ({appliedCoupon.code})</span>
-                      <span>- ₹{discount}</span>
-                    </div>
-                  )}
-
-                  {deliveryType === 'delivery' && (
+                {/* Professional Receipt/Pricing Summary Box - Only in Cart */}
+                {step === 'cart' && (
+                  <div className="bg-white/60 p-4 rounded-3xl border border-brand/5 shadow-soft space-y-2 text-xs relative z-10">
                     <div className="flex justify-between font-semibold text-brand-dark/60">
-                      <span>Delivery Fee ({distanceMode === 'local' ? 'Local ≤ 8km' : 'Domestic > 8km'}{calculatedDistance !== null ? ` • ${calculatedDistance.toFixed(1)}km` : ''})</span>
-                      <span className="font-bold text-brand-dark">{deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`}</span>
+                      <span>Total MRP</span>
+                      <span className="font-bold text-brand-dark line-through decoration-brand-dark/30">₹{mrpTotal}</span>
                     </div>
-                  )}
+                    
+                    {mrpDiscount > 0 && (
+                      <div className="flex justify-between font-bold text-green-600">
+                        <span className="flex items-center gap-1">✨ Discount on MRP</span>
+                        <span>- ₹{mrpDiscount}</span>
+                      </div>
+                    )}
 
-                  {deliveryType === 'pickup' && (
-                    <div className="flex justify-between font-semibold text-brand-dark/60">
-                      <span>Delivery Mode</span>
-                      <span className="text-brand font-bold uppercase tracking-wider text-[10px]">Store Pickup (Free)</span>
+                    <div className="flex justify-between font-semibold text-brand-dark/60 pt-1 border-t border-brand/5">
+                      <span>Items Subtotal</span>
+                      <span className="font-bold text-brand-dark">₹{total}</span>
                     </div>
-                  )}
-                </div>
+                    
+                    {appliedCoupon && discount > 0 && (
+                      <div className="flex justify-between font-bold text-green-600">
+                        <span className="flex items-center gap-1">🎟️ Coupon ({appliedCoupon.code})</span>
+                        <span>- ₹{discount}</span>
+                      </div>
+                    )}
+
+                    {deliveryType === 'delivery' && (
+                      <div className="flex justify-between font-semibold text-brand-dark/60">
+                        <span>Delivery Fee ({deliveryTimeRange})</span>
+                        <span className="font-bold text-brand-dark">{deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`}</span>
+                      </div>
+                    )}
+
+                    {deliveryType === 'pickup' && (
+                      <div className="flex justify-between font-semibold text-brand-dark/60">
+                        <span>Delivery Mode</span>
+                        <span className="text-brand font-bold uppercase tracking-wider text-[10px]">Store Pickup (Free)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Bottom Total & Checkout Button Row */}
                 <div className="flex items-center justify-between gap-4 pt-2 relative z-10 bg-white/40 p-4 rounded-[2rem] border border-brand/5 shadow-soft">
