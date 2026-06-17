@@ -826,7 +826,8 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
           user_id: user?.id || null,
           order_source: 'website',
           payment_method: paymentMethod,
-          payment_status: paymentMethod === 'upi' ? 'verification_pending' : 'pending'
+          payment_status: paymentMethod === 'upi' ? 'verification_pending' : 'pending',
+          delivery_time_range: deliveryTimeRange
         })
       });
 

@@ -691,7 +691,8 @@ app.post('/api/orders/place', async (req, res) => {
     order_source = 'website',
     payment_method = null,
     payment_status = 'pending',
-    status = 'pending'
+    status = 'pending',
+    delivery_time_range = null
   } = req.body;
 
   if (!items || !Array.isArray(items) || items.length === 0 || !customer_name || !customer_phone) {
@@ -699,8 +700,14 @@ app.post('/api/orders/place', async (req, res) => {
   }
 
   try {
-    const adminKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-    const serverSupabase = createClient(process.env.VITE_SUPABASE_URL, adminKey);
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceRoleKey) {
+      console.error('SUPABASE_SERVICE_ROLE_KEY is missing on backend.');
+      return res.status(500).json({ 
+        error: 'Server configuration error: SUPABASE_SERVICE_ROLE_KEY is missing on backend. Please configure your .env file with the service role key to place orders.' 
+      });
+    }
+    const serverSupabase = createClient(process.env.VITE_SUPABASE_URL, serviceRoleKey);
 
     // Fetch products to verify pricing on the backend
     const productIds = items.map(item => {
@@ -822,17 +829,21 @@ app.post('/api/orders/place', async (req, res) => {
     // Calculate delivery fee
     let deliveryFee = 0;
     if (delivery_type === 'delivery') {
-      const now = new Date();
-      const day = now.getDay();
-      const hour = now.getHours();
-      const isWeekend = day === 0 || day === 6;
-      const isAfter7PM = hour >= 19;
       const isAbove399 = subtotal > 399;
-      
       const distanceMode = (delivery_distance_km !== undefined && delivery_distance_km <= 8) ? 'local' : 'domestic';
       
       if (distanceMode === 'local') {
-        const isEligibleForFree = isAbove399 && (isWeekend || isAfter7PM);
+        let isEligibleForFree = false;
+        if (delivery_time_range) {
+          isEligibleForFree = isAbove399 && (delivery_time_range === 'evening' || delivery_time_range === 'weekend');
+        } else {
+          const now = new Date();
+          const day = now.getDay();
+          const hour = now.getHours();
+          const isWeekend = day === 0 || day === 6;
+          const isAfter7PM = hour >= 19;
+          isEligibleForFree = isAbove399 && (isWeekend || isAfter7PM);
+        }
         deliveryFee = isEligibleForFree ? 0 : 100;
       } else {
         deliveryFee = Math.ceil(totalWeightGrams / 500) * 60;
@@ -873,7 +884,10 @@ app.post('/api/orders/place', async (req, res) => {
         payment_status: payment_status,
         order_source: order_source,
         delivery_type: delivery_type,
-        metadata: { display_id: displayId }
+        metadata: { 
+          display_id: displayId,
+          ...(delivery_time_range ? { delivery_time_range } : {})
+        }
       }])
       .select()
       .single();
