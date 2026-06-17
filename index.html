@@ -9,7 +9,46 @@
     <title>Jars of Joy - Handcrafted Confectionery</title>
   </head>
   <body class="overflow-x-hidden">
-    <div id="root"></div>
+    <div id="root">
+      <style>
+        body { margin: 0; background-color: #fdfbf7; }
+        .joj-preloader {
+          position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+          background: #fdfbf7;
+          display: flex; flex-direction: column; justify-content: center; align-items: center;
+          z-index: 999999;
+          font-family: system-ui, -apple-system, sans-serif;
+        }
+        .joj-logo-container {
+          position: relative; width: 120px; height: 120px; margin-bottom: 40px;
+          animation: joj-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .joj-logo {
+          width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+          box-shadow: 0 20px 40px -10px rgba(134, 59, 255, 0.3);
+        }
+        .joj-spinner {
+          position: absolute; top: -12px; left: -12px; right: -12px; bottom: -12px;
+          border: 3px solid transparent; border-top-color: #863bff; border-bottom-color: #ff3b86;
+          border-radius: 50%; animation: joj-spin 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+        }
+        .joj-text {
+          color: #863bff; font-weight: 900; letter-spacing: 0.25em;
+          text-transform: uppercase; font-size: 11px;
+          animation: joj-fade 2s ease-in-out infinite;
+        }
+        @keyframes joj-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes joj-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        @keyframes joj-fade { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+      </style>
+      <div class="joj-preloader">
+        <div class="joj-logo-container">
+          <div class="joj-spinner"></div>
+          <img src="/business_logo_new.webp" alt="Jars of Joy Logo" class="joj-logo" />
+        </div>
+        <div class="joj-text">Baking Joy...</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
