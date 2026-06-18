@@ -93,6 +93,26 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi'>('upi');
   const [deliveryTimeRange, setDeliveryTimeRange] = useState<'standard' | 'evening' | 'weekend'>('standard');
   
+  const [qrTimer, setQrTimer] = useState(120);
+
+  useEffect(() => {
+    let interval: any = null;
+    if (showQr && qrTimer > 0) {
+      interval = setInterval(() => {
+        setQrTimer((prev) => prev - 1);
+      }, 1000);
+    } else if (qrTimer === 0) {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [showQr, qrTimer]);
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+  
   // Delivery distance zone selection state: 'local' (<= 8km) or 'domestic' (> 8km)
   const [distanceMode, setDistanceMode] = useState<'local' | 'domestic'>('local');
   const [calculatedDistance, setCalculatedDistance] = useState<number | null>(null);
@@ -908,12 +928,49 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       setOrderGrandTotal(finalTotal);
       if (paymentMethod === 'upi') {
         setStep('upi_payment');
+        addToast('Order created! Please complete payment.', 'sweet');
       } else {
         setStep('success');
         clearCart();
         addToast('Order placed successfully!', 'sweet');
       }
-      addToast('Order placed successfully!', 'sweet');
+
+      // Send Telegram alert in background (non-blocking)
+      if (paymentMethod === 'upi') {
+        (async () => {
+          try {
+            const { data: botTokenData } = await (supabase
+              .from('site_content') as any)
+              .select('value')
+              .eq('key', 'telegram_bot_token')
+              .maybeSingle();
+              
+            const { data: chatIdData } = await (supabase
+              .from('site_content') as any)
+              .select('value')
+              .eq('key', 'telegram_chat_id')
+              .maybeSingle();
+
+            const token = (botTokenData as any)?.value;
+            const chatId = (chatIdData as any)?.value;
+
+            if (token && chatId) {
+              const msg = `🔔 <b>New UPI Payment Pending</b>\n\n<b>Order ID:</b> ${displayId}\n<b>Name:</b> ${customerName}\n<b>Phone:</b> ${customerPhone}\n<b>Amount:</b> ₹${finalTotal}\n\nPlease confirm this payment in the Admin Orders panel.`;
+              await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: chatId,
+                  text: msg,
+                  parse_mode: 'HTML'
+                })
+              });
+            }
+          } catch (tErr) {
+            console.error('Failed to send Telegram alert in background:', tErr);
+          }
+        })();
+      }
     } catch (err: any) {
       addToast(err.message || 'Failed to place order', 'error');
     } finally {
@@ -1676,7 +1733,10 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                       {!showQr ? (
                         <button
                           type="button"
-                          onClick={() => setShowQr(true)}
+                          onClick={() => {
+                            setQrTimer(120);
+                            setShowQr(true);
+                          }}
                           className="w-full py-3 bg-white border border-brand/10 hover:bg-brand/5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-brand-dark flex items-center justify-center gap-2 transition-all shadow-sm"
                         >
                           📷 Show Payment QR Code
@@ -1691,9 +1751,26 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                               includeMargin={true}
                             />
                           </div>
+                          <div className="text-center space-y-1">
+                            <p className="text-xs font-black text-brand tracking-wider">
+                              QR Code Expires In: <span className="font-mono text-sm bg-brand/5 px-2 py-1 rounded-md">{formatTimer(qrTimer)}</span>
+                            </p>
+                            {qrTimer === 0 ? (
+                              <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest animate-pulse">
+                                QR expired. Please click "I Have Paid" if transfer is done.
+                              </p>
+                            ) : (
+                              <p className="text-[9px] font-bold text-brand-dark/40 uppercase tracking-widest">
+                                Scan to transfer ₹{orderGrandTotal}
+                              </p>
+                            )}
+                          </div>
                           <button
                             type="button"
-                            onClick={() => setShowQr(false)}
+                            onClick={() => {
+                              setShowQr(false);
+                              setQrTimer(120);
+                            }}
                             className="text-[9px] font-black text-brand uppercase tracking-widest hover:underline"
                           >
                             Hide QR Code
@@ -1703,7 +1780,10 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                     </div>
 
                     {/* Confirmation Button */}
-                    <div className="px-6 pt-4">
+                    <div className="px-6 pt-4 space-y-2">
+                      <p className="text-[9px] font-black text-brand uppercase tracking-wider animate-pulse">
+                        ⚠️ Please click the button below after completing the payment
+                      </p>
                       <Button3D
                         onClick={() => {
                           setStep('success');
@@ -1711,7 +1791,6 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                           // Reset payment states
                           setShowQr(false);
                           setUserUpiId('');
-                          addToast('Payment marked as pending verification!', 'sweet');
                         }}
                         className="w-full h-12 text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-lg"
                       >
@@ -1735,11 +1814,11 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
                     <div className="space-y-2 max-w-sm">
                       <h3 className="heading-serif text-2xl font-black text-brand-dark">
-                        {paymentMethod === 'upi' ? 'Payment Verifying' : 'Sweetness Confirmed!'}
+                        {paymentMethod === 'upi' ? 'Congratulations! 🎉' : 'Sweetness Confirmed!'}
                       </h3>
                       <p className="text-xs font-semibold text-brand-dark/55 leading-relaxed">
                         {paymentMethod === 'upi'
-                          ? 'Congrats, your payment is under verification and you will be notified shortly. You can also send the receipt to WhatsApp.'
+                          ? 'Your order has been successfully created and your payment is under verification. You will be notified once the payment has been verified. 🧁✨'
                           : 'Your order has been recorded. Let\'s redirect to WhatsApp to send your receipt and confirm delivery details.'}
                       </p>
                     </div>
