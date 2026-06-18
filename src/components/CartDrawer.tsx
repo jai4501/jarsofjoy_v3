@@ -539,6 +539,26 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     }
   }, [items, total, appliedCoupon]);
 
+  // Auto-advance to success screen when returning to the app after UPI app navigation
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && step === 'upi_payment') {
+        setStep('success');
+        setShowQr(false);
+        setUserUpiId('');
+        addToast('Payment marked as pending verification!', 'sweet');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
+  }, [step]);
+
   const handlePincodeChange = async (val: string) => {
     const cleanVal = val.replace(/\D/g, '').slice(0, 6);
     setPincode(cleanVal);
@@ -828,16 +848,10 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     try {
       const addressVal = deliveryType === 'pickup' ? 'Store Pickup' : deliveryAddress;
 
-      // Generate custom Order ID client-side
+      // Generate custom Order ID client-side instantaneously using random suffix
       const todayStr = new Date().toISOString().split('T')[0];
       const prefix = 'SFOID';
-      
-      const { count } = await (supabase.from('orders') as any)
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', `${todayStr}T00:00:00Z`)
-        .lt('created_at', `${todayStr}T23:59:59Z`);
-        
-      const seq = String((count || 0) + 1).padStart(4, '0');
+      const seq = Math.floor(1000 + Math.random() * 9000); // 4-digit random sequence
       const displayId = `JOJ-${prefix}-${todayStr}-${seq}`;
       const finalTotal = total - discount + deliveryFee;
 
@@ -888,46 +902,13 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       const { error: itemsError } = await (supabase.from('order_items') as any).insert(orderItems);
       if (itemsError) throw itemsError;
 
-      // Send Telegram alert if UPI payment
-      if (paymentMethod === 'upi') {
-        try {
-          const { data: botTokenData } = await (supabase
-            .from('site_content') as any)
-            .select('value')
-            .eq('key', 'telegram_bot_token')
-            .maybeSingle();
-            
-          const { data: chatIdData } = await (supabase
-            .from('site_content') as any)
-            .select('value')
-            .eq('key', 'telegram_chat_id')
-            .maybeSingle();
-
-          const token = (botTokenData as any)?.value;
-          const chatId = (chatIdData as any)?.value;
-
-          if (token && chatId) {
-            const msg = `🔔 <b>New UPI Payment Pending</b>\n\n<b>Order ID:</b> ${displayId}\n<b>Name:</b> ${customerName}\n<b>Phone:</b> ${customerPhone}\n<b>Amount:</b> ₹${finalTotal}\n\nPlease confirm this payment in the Admin Orders panel.`;
-            await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: chatId,
-                text: msg,
-                parse_mode: 'HTML'
-              })
-            });
-          }
-        } catch (tErr) {
-          console.error('Failed to send Telegram alert:', tErr);
-        }
-      }
-
       setPlacedOrderId((orderData as any).display_id || (orderData as any).metadata?.display_id || (orderData as any).id);
       setPlacedOrderUuid((orderData as any).id);
       setOrderGrandTotal(finalTotal);
+      
       if (paymentMethod === 'upi') {
         setStep('upi_payment');
+        clearCart(); // Clear the items immediately as the order is placed!
         addToast('Order created! Please complete payment.', 'sweet');
       } else {
         setStep('success');
@@ -965,6 +946,8 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                   parse_mode: 'HTML'
                 })
               });
+            } else {
+              console.warn('Telegram token or chat ID is missing in database site_content.');
             }
           } catch (tErr) {
             console.error('Failed to send Telegram alert in background:', tErr);
