@@ -26,8 +26,7 @@ export const useUserStore = create<UserState>((set, get) => ({
   loading: false,
   isInitialized: false,
   setUser: async (user) => {
-    console.log('setUser called with:', user?.email || 'null');
-    const isAdminEmail = user?.email === 'jarsofjoy.bakes@gmail.com' || user?.email?.endsWith('@admin.com');
+    const isAdminEmail = user?.email === 'jarsofjoy.bakes@gmail.com';
     set({ user, isAdmin: isAdminEmail, loading: !!user });
     
     if (user) {

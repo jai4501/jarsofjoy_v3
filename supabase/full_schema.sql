@@ -464,10 +464,21 @@ BEGIN
       USING (auth.uid() = user_id OR public.is_admin());
   END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admin can insert orders') THEN
+    CREATE POLICY "Admin can insert orders" ON public.orders FOR INSERT
+      WITH CHECK (public.is_admin());
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admin can update orders') THEN
     CREATE POLICY "Admin can update orders" ON public.orders FOR UPDATE
       USING (public.is_admin())
       WITH CHECK (public.is_admin());
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can update their own orders') THEN
+    CREATE POLICY "Users can update their own orders" ON public.orders FOR UPDATE
+      USING (auth.uid() = user_id OR public.is_admin())
+      WITH CHECK (auth.uid() = user_id OR public.is_admin());
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admin can delete orders') THEN
@@ -540,6 +551,29 @@ BEGIN
     CREATE POLICY "Allow admin all temp_otps" 
       ON public.temp_otps FOR ALL 
       USING (public.is_admin()) 
+      WITH CHECK (public.is_admin());
+  END IF;
+
+  -- PAYMENTS
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can view their own payments') THEN
+    CREATE POLICY "Users can view their own payments" ON public.payments FOR SELECT
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.orders 
+          WHERE orders.id = payments.order_id 
+          AND (orders.user_id = auth.uid() OR public.is_admin())
+        )
+      );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow authenticated payment creation') THEN
+    CREATE POLICY "Allow authenticated payment creation" ON public.payments FOR INSERT
+      WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admin can update payments') THEN
+    CREATE POLICY "Admin can update payments" ON public.payments FOR UPDATE
+      USING (public.is_admin())
       WITH CHECK (public.is_admin());
   END IF;
 

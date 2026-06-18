@@ -53,27 +53,11 @@ export const AdminOrders = () => {
 
   const updateOrderStatus = async (id: string, status: string) => {
     try {
-      const { data: urlData } = await supabase
-        .from('site_content')
-        .select('value')
-        .eq('key', 'whatsapp_backend_url')
-        .single();
-      const backendUrl = (urlData as any)?.value || `http://${window.location.hostname}:3001`;
+      const { error } = await (supabase.from('orders') as any)
+        .update({ status: status })
+        .eq('id', id);
 
-      const response = await fetch(`${backendUrl}/api/orders/update-status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: id,
-          status: status,
-          userId: user?.id
-        })
-      });
-
-      const resData = await response.json();
-      if (!response.ok) {
-        throw new Error(resData.error || 'Failed to update order status securely.');
-      }
+      if (error) throw error;
       
       addToast(`Order marked as ${(status || 'pending').replace('_', ' ')}`, 'sweet');
       fetchOrders();
@@ -88,12 +72,6 @@ export const AdminOrders = () => {
       return;
     }
     try {
-      const { data: urlData } = await supabase
-        .from('site_content')
-        .select('value')
-        .eq('key', 'whatsapp_backend_url')
-        .single();
-      const backendUrl = (urlData as any)?.value || `http://${window.location.hostname}:3001`;
 
       if (paymentId) {
         const { error } = await (supabase.from('payments') as any)
@@ -113,21 +91,11 @@ export const AdminOrders = () => {
         .eq('id', orderId);
       if (orderError) throw orderError;
       
-      // Also update order status via backend
-      const responseStatus = await fetch(`${backendUrl}/api/orders/update-status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: orderId,
-          status: 'preparing',
-          userId: user?.id
-        })
-      });
-
-      const resStatusData = await responseStatus.json();
-      if (!responseStatus.ok) {
-        throw new Error(resStatusData.error || 'Failed to update order status securely.');
-      }
+      // Also update order status directly in database
+      const { error: statusError } = await (supabase.from('orders') as any)
+        .update({ status: 'preparing' })
+        .eq('id', orderId);
+      if (statusError) throw statusError;
         
       addToast('Payment verified & order confirmed!', 'sweet');
       fetchOrders();

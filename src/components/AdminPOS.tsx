@@ -106,40 +106,68 @@ export const AdminPOS = () => {
         onBack={() => setShowCheckout(false)}
         onComplete={async (orderData) => {
           try {
-            // Retrieve backend URL
-            const { data: urlData } = await supabase
-              .from('site_content')
-              .select('value')
-              .eq('key', 'whatsapp_backend_url')
-              .single();
-            const backendUrl = (urlData as any)?.value || `http://${window.location.hostname}:3001`;
+            // Generate custom Order ID client-side
+            const todayStr = new Date().toISOString().split('T')[0];
+            const prefix = 'POSOID';
+            
+            const { count } = await (supabase.from('orders') as any)
+              .select('*', { count: 'exact', head: true })
+              .gte('created_at', `${todayStr}T00:00:00Z`)
+              .lt('created_at', `${todayStr}T23:59:59Z`);
+              
+            const seq = String((count || 0) + 1).padStart(4, '0');
+            const displayId = `JOJ-${prefix}-${todayStr}-${seq}`;
 
-            // Place order via backend
-            const response = await fetch(`${backendUrl}/api/orders/place`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                items: orderData.items.map((item: any) => ({ id: item.id, quantity: item.quantity })),
-                coupon_code: orderData.coupon_code,
-                delivery_type: orderData.delivery_type,
-                delivery_address: orderData.address,
-                delivery_distance_km: orderData.delivery_distance_km,
+            // Insert order directly
+            const { data: order, error: orderError } = await (supabase.from('orders') as any)
+              .insert([{
+                user_id: orderData.user_id,
                 customer_name: orderData.customer_name,
                 customer_phone: orderData.customer_phone,
-                user_id: orderData.user_id,
-                order_source: 'pos',
+                address: orderData.address,
+                items: orderData.items.map((item: any) => ({ id: item.id, quantity: item.quantity })),
+                total: orderData.total,
+                subtotal: orderData.subtotal,
+                discount_amount: orderData.discount_amount,
+                coupon_code: orderData.coupon_code,
+                delivery_charge: orderData.delivery_charge,
+                status: orderData.status,
                 payment_method: orderData.payment_method,
                 payment_status: orderData.payment_status,
-                status: orderData.status
-              })
+                order_source: 'pos',
+                delivery_type: orderData.delivery_type,
+                display_id: displayId,
+                metadata: {
+                  display_id: displayId,
+                  weight_grams: orderData.weight_grams,
+                  delivery_distance_km: orderData.delivery_distance_km,
+                  delivery_partner: orderData.delivery_partner,
+                  is_weekend_order: orderData.is_weekend_order,
+                  is_late_night: orderData.is_late_night
+                }
+              }])
+              .select()
+              .single();
+
+            if (orderError) throw orderError;
+
+            // Insert order items directly
+            const orderItems = orderData.items.map((item: any) => {
+              const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+              const isValidUuid = uuidRegex.test(item.id);
+              
+              return {
+                order_id: (order as any).id,
+                product_id: isValidUuid ? item.id : null,
+                product_name: item.name,
+                quantity: item.quantity,
+                unit_price: item.price,
+                total_price: item.price * item.quantity
+              };
             });
 
-            const resData = await response.json();
-            if (!response.ok) {
-              throw new Error(resData.error || 'Failed to place POS order securely.');
-            }
-
-            const order = resData.order;
+            const { error: itemsError } = await (supabase.from('order_items') as any).insert(orderItems);
+            if (itemsError) throw itemsError;
 
             // 3. Upsert customer in customers CRM
             let cleanPhone = orderData.customer_phone.replace(/\D/g, '');

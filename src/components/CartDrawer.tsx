@@ -803,40 +803,102 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     try {
       const addressVal = deliveryType === 'pickup' ? 'Store Pickup' : deliveryAddress;
 
-      // Retrieve backend URL
-      const { data: urlData } = await supabase
-        .from('site_content')
-        .select('value')
-        .eq('key', 'whatsapp_backend_url')
-        .single();
-      const backendUrl = (urlData as any)?.value || `http://${window.location.hostname}:3001`;
+      // Generate custom Order ID client-side
+      const todayStr = new Date().toISOString().split('T')[0];
+      const prefix = 'SFOID';
+      
+      const { count } = await (supabase.from('orders') as any)
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', `${todayStr}T00:00:00Z`)
+        .lt('created_at', `${todayStr}T23:59:59Z`);
+        
+      const seq = String((count || 0) + 1).padStart(4, '0');
+      const displayId = `JOJ-${prefix}-${todayStr}-${seq}`;
+      const finalTotal = total - discount + deliveryFee;
 
-      // Place order via backend
-      const response = await fetch(`${backendUrl}/api/orders/place`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: items.map(item => ({ id: item.id, quantity: item.quantity })),
-          coupon_code: appliedCoupon ? appliedCoupon.code : null,
-          delivery_type: deliveryType,
-          delivery_address: addressVal,
-          delivery_distance_km: calculatedDistance,
+      // Insert order directly
+      const { data: orderData, error: orderError } = await (supabase.from('orders') as any)
+        .insert([{
+          user_id: user?.id || null,
           customer_name: customerName,
           customer_phone: customerPhone,
-          user_id: user?.id || null,
-          order_source: 'website',
+          address: addressVal,
+          items: items.map(item => ({ id: item.id, quantity: item.quantity })),
+          total: finalTotal,
+          subtotal: total,
+          discount_amount: discount,
+          coupon_code: appliedCoupon ? appliedCoupon.code : null,
+          delivery_charge: deliveryFee,
+          status: 'pending',
           payment_method: paymentMethod,
           payment_status: paymentMethod === 'upi' ? 'verification_pending' : 'pending',
-          delivery_time_range: deliveryTimeRange
-        })
+          order_source: 'website',
+          delivery_type: deliveryType,
+          display_id: displayId,
+          metadata: { 
+            display_id: displayId,
+            ...(deliveryTimeRange ? { delivery_time_range: deliveryTimeRange } : {})
+          }
+        }])
+        .select()
+        .single();
+
+      if (orderError) throw orderError;
+
+      // Insert order items directly
+      const orderItems = items.map((item) => {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const isValidUuid = uuidRegex.test(item.id);
+        
+        return {
+          order_id: (orderData as any).id,
+          product_id: isValidUuid ? item.id : null,
+          product_name: item.name,
+          quantity: item.quantity,
+          unit_price: item.price,
+          total_price: item.price * item.quantity
+        };
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to place order securely.');
+      const { error: itemsError } = await (supabase.from('order_items') as any).insert(orderItems);
+      if (itemsError) throw itemsError;
+
+      // Send Telegram alert if UPI payment
+      if (paymentMethod === 'upi') {
+        try {
+          const { data: botTokenData } = await (supabase
+            .from('site_content') as any)
+            .select('value')
+            .eq('key', 'telegram_bot_token')
+            .maybeSingle();
+            
+          const { data: chatIdData } = await (supabase
+            .from('site_content') as any)
+            .select('value')
+            .eq('key', 'telegram_chat_id')
+            .maybeSingle();
+
+          const token = (botTokenData as any)?.value;
+          const chatId = (chatIdData as any)?.value;
+
+          if (token && chatId) {
+            const msg = `🔔 <b>New UPI Payment Pending</b>\n\n<b>Order ID:</b> ${displayId}\n<b>Name:</b> ${customerName}\n<b>Phone:</b> ${customerPhone}\n<b>Amount:</b> ₹${finalTotal}\n\nPlease confirm this payment in the Admin Orders panel.`;
+            await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: msg,
+                parse_mode: 'HTML'
+              })
+            });
+          }
+        } catch (tErr) {
+          console.error('Failed to send Telegram alert:', tErr);
+        }
       }
 
-      setPlacedOrderId(data.order.metadata?.display_id || data.order.id);
+      setPlacedOrderId((orderData as any).metadata?.display_id || (orderData as any).id);
       if (paymentMethod === 'upi') {
         setStep('upi_payment');
       } else {
@@ -850,6 +912,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     } finally {
       setSubmitting(false);
     }
+
   };
 
   const handleWhatsAppRedirect = () => {
