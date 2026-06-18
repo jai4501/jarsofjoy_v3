@@ -143,8 +143,6 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     localStorage.removeItem('joj_upi_txn_ref');
     localStorage.removeItem('joj_order_grand_total');
   };
-  const [userUpiId, setUserUpiId] = useState('');
-  const [savingUpiId, setSavingUpiId] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi'>('upi');
   const [deliveryTimeRange, setDeliveryTimeRange] = useState<'standard' | 'evening' | 'weekend'>('standard');
@@ -606,7 +604,6 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       if (document.visibilityState === 'visible' && step === 'upi_payment') {
         setStep('success');
         setShowQr(false);
-        setUserUpiId('');
         addToast('Payment marked as pending verification!', 'sweet');
       }
     };
@@ -1017,24 +1014,6 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     })();
   };
 
-  const handleSaveUserUpiId = async () => {
-    if (!userUpiId || !userUpiId.includes('@')) {
-      addToast('Please enter a valid UPI ID (e.g. name@bank)', 'error');
-      return;
-    }
-    setSavingUpiId(true);
-    try {
-      const { error } = await (supabase.from('orders') as any)
-        .update({ payment_reference: `User UPI: ${userUpiId}` })
-        .eq('id', placedOrderUuid);
-      if (error) throw error;
-      addToast('UPI ID linked successfully!', 'sweet');
-    } catch (err: any) {
-      addToast(err.message || 'Failed to link UPI ID', 'error');
-    } finally {
-      setSavingUpiId(false);
-    }
-  };
 
   const handleWhatsAppRedirect = () => {
     const orderIdShort = placedOrderId.startsWith('JOJ') ? placedOrderId : placedOrderId.slice(0, 8).toUpperCase();
@@ -1742,29 +1721,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                       </div>
                     </div>
 
-                    {/* Provide User's UPI ID Option */}
-                    <div className="px-6 space-y-3">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-brand-dark/40 text-left">
-                        Or Link Your UPI ID for Verification
-                      </p>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="yourname@bank"
-                          value={userUpiId}
-                          onChange={(e) => setUserUpiId(e.target.value)}
-                          className="flex-1 h-11 px-3 bg-white border border-brand/10 rounded-xl text-xs font-semibold text-brand-dark focus:outline-none focus:border-brand/40 shadow-sm"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleSaveUserUpiId}
-                          disabled={savingUpiId}
-                          className="px-4 bg-brand text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-brand-dark transition-all disabled:opacity-50"
-                        >
-                          {savingUpiId ? 'Linking...' : 'Link ID'}
-                        </button>
-                      </div>
-                    </div>
+
 
                     {/* Show QR Code Toggle */}
                     <div className="px-6">
@@ -1818,23 +1775,24 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                     </div>
 
                     {/* Confirmation Button */}
-                    <div className="px-6 pt-4 space-y-2">
-                      <p className="text-[9px] font-black text-brand uppercase tracking-wider animate-pulse">
-                        ⚠️ Please click the button below after completing the payment
-                      </p>
-                      <Button3D
-                        onClick={() => {
-                          setStep('success');
-                          clearCart();
-                          // Reset payment states
-                          setShowQr(false);
-                          setUserUpiId('');
-                        }}
-                        className="w-full h-12 text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-lg"
-                      >
-                        <CheckCircle2 size={16} /> I Have Paid
-                      </Button3D>
-                    </div>
+                    {showQr && (
+                      <div className="px-6 pt-4 space-y-2">
+                        <p className="text-[9px] font-black text-brand uppercase tracking-wider animate-pulse">
+                          ⚠️ Please click the button below after completing the payment
+                        </p>
+                        <Button3D
+                          onClick={() => {
+                            setStep('success');
+                            clearCart();
+                            // Reset payment states
+                            setShowQr(false);
+                          }}
+                          className="w-full h-12 text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+                        >
+                          <CheckCircle2 size={16} /> I Have Paid
+                        </Button3D>
+                      </div>
+                    )}
                   </motion.div>
                 )}
 

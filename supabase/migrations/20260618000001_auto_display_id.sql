@@ -1,5 +1,7 @@
--- Migration: Auto-Generate Order display_id on Insert
--- Creates a BEFORE INSERT trigger to generate display_id automatically based on the current date's sequence count.
+-- Migration: Auto-Generate Order display_id on Insert and Enable Realtime
+-- Creates a BEFORE INSERT trigger to generate display_id automatically.
+-- Configures REPLICA IDENTITY FULL to send old states in update events.
+-- Enables Realtime on the orders table.
 
 -- Create trigger function
 CREATE OR REPLACE FUNCTION public.generate_order_display_id()
@@ -60,3 +62,17 @@ CREATE TRIGGER orders_set_display_id
     BEFORE INSERT ON public.orders
     FOR EACH ROW
     EXECUTE FUNCTION public.generate_order_display_id();
+
+-- Configure REPLICA IDENTITY FULL to send old states in update events
+ALTER TABLE public.orders REPLICA IDENTITY FULL;
+
+-- Safely add table to realtime publication if not already present
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'orders'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
+  END IF;
+END $$;

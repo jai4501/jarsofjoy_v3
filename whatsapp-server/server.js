@@ -975,7 +975,119 @@ app.post('/api/orders/update-status', async (req, res) => {
   }
 });
 
+// WhatsApp Notification Helper
+async function sendWhatsAppNotification(to, message) {
+  if (currentStatus !== 'Connected' || !sock) {
+    console.log(`[WHATSAPP] Skip sending to ${to} (WhatsApp offline). Message: "${message}"`);
+    return false;
+  }
+  try {
+    let cleanTo = to.replace(/\D/g, '');
+    if (cleanTo.length === 10) {
+      cleanTo = '91' + cleanTo;
+    }
+    const jid = `${cleanTo}@s.whatsapp.net`;
+    await sock.sendMessage(jid, { text: message });
+    console.log(`[WHATSAPP] Notification sent successfully to ${cleanTo}`);
+    return true;
+  } catch (err) {
+    console.error(`[WHATSAPP-ERROR] Failed to send notification to ${to}:`, err);
+    return false;
+  }
+}
+
+// Supabase Realtime Listener for Order Status Updates
+function setupDatabaseRealtimeListener() {
+  console.log('[REALTIME] Initializing Supabase Realtime Listener for orders table...');
+  
+  supabase
+    .channel('orders-lifecycle')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'orders'
+      },
+      async (payload) => {
+        const order = payload.new;
+        if (!order || !order.customer_phone) return;
+        
+        console.log(`[REALTIME-INSERT] New order: ${order.display_id || order.id}`);
+        
+        const orderIdStr = order.display_id || order.id?.slice(0, 8).toUpperCase() || 'N/A';
+        const name = order.customer_name || 'Customer';
+        let message = '';
+
+        if (order.payment_method === 'upi') {
+          message = `🍯 *Jars of Joy Order Placed!*\n\nHi ${name},\n\nYour order *#${orderIdStr}* has been successfully created and is pending payment verification. 🧁✨\n\nWe will notify you immediately once your payment is verified. Thank you! 🍰💛`;
+        } else {
+          message = `🍯 *Jars of Joy Order Placed!*\n\nHi ${name},\n\nYour order *#${orderIdStr}* has been successfully created (Cash on Delivery). 🧁✨\n\nWe will notify you once your order is confirmed. Thank you! 🍰💛`;
+        }
+
+        await sendWhatsAppNotification(order.customer_phone, message);
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'orders'
+      },
+      async (payload) => {
+        const oldOrder = payload.old;
+        const newOrder = payload.new;
+        if (!newOrder || !newOrder.customer_phone) return;
+
+        // Skip if status is unchanged
+        if (oldOrder && oldOrder.status !== undefined && oldOrder.status === newOrder.status) {
+          return;
+        }
+
+        console.log(`[REALTIME-UPDATE] Order ${newOrder.display_id || newOrder.id} status updated to: ${newOrder.status}`);
+
+        const orderIdStr = newOrder.display_id || newOrder.id?.slice(0, 8).toUpperCase() || 'N/A';
+        const name = newOrder.customer_name || 'Customer';
+        let message = '';
+
+        switch (newOrder.status) {
+          case 'confirmed':
+            message = `🍯 *Jars of Joy Order Confirmed!*\n\nHi ${name},\n\nCongratulations! 🎉 Your payment has been confirmed and your order *#${orderIdStr}* is now officially confirmed! 🧁✨\n\nWe are starting to work on your sweetness! 💛`;
+            break;
+          case 'preparing':
+            message = `🥞 *Jars of Joy Update!*\n\nHi ${name},\n\nYour order *#${orderIdStr}* is now being freshly prepared in our kitchen! 🧁🥄\n\nWe will update you once it's ready. ✨`;
+            break;
+          case 'ready':
+            if (newOrder.delivery_type === 'pickup') {
+              message = `🏪 *Jars of Joy Update!*\n\nHi ${name},\n\nGreat news! Your order *#${orderIdStr}* is ready for pickup at the store! 🧁🏪\n\nLooking forward to seeing you soon! 💛`;
+            } else {
+              message = `🚚 *Jars of Joy Update!*\n\nHi ${name},\n\nGreat news! Your order *#${orderIdStr}* is ready and packed for delivery! 🧁🎁\n\nOur delivery agent will reach you shortly. ✨`;
+            }
+            break;
+          case 'out_for_delivery':
+            message = `🛵 *Jars of Joy Out for Delivery!*\n\nHi ${name},\n\nYour order *#${orderIdStr}* is out for delivery! 🚚🧁\n\nOur delivery rider is on the way. Please keep your phone reachable. 💛`;
+            break;
+          case 'completed':
+            message = `🍰 *Jars of Joy Order Delivered!*\n\nHi ${name},\n\nYour order *#${orderIdStr}* has been successfully delivered! Enjoy your sweet treats! 🧁💛\n\nWe'd love to hear your feedback. See you again soon! ✨`;
+            break;
+          case 'cancelled':
+            message = `🛑 *Jars of Joy Order Cancelled*\n\nHi ${name},\n\nYour order *#${orderIdStr}* has been cancelled.\n\nIf you have any questions, please contact support. 💛`;
+            break;
+          default:
+            return;
+        }
+
+        await sendWhatsAppNotification(newOrder.customer_phone, message);
+      }
+    )
+    .subscribe((status) => {
+      console.log(`[REALTIME-STATUS] orders-lifecycle channel status: ${status}`);
+    });
+}
+
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Bakery Backend running on port ${PORT}`);
+  setupDatabaseRealtimeListener();
 });
