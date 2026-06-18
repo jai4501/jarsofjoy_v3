@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingBag, Search, Filter, Clock, MapPin, Phone, Package, RefreshCw, XCircle, Trash2, FileDown, CheckCircle2, ShieldCheck, Eye, ExternalLink } from 'lucide-react';
+import { ShoppingBag, Search, Filter, Clock, MapPin, Phone, Package, RefreshCw, XCircle, FileDown, CheckCircle2, ShieldCheck, Eye, ExternalLink } from 'lucide-react';
 import { FloatingCard } from './ui/FloatingCard';
 import { useToastStore } from '../store/useToastStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -14,6 +14,7 @@ export const AdminOrders = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [utrInputs, setUtrInputs] = useState<{ [key: string]: string }>({});
   
   const { addToast } = useToastStore();
@@ -23,14 +24,21 @@ export const AdminOrders = () => {
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      // Joined fetch for payments screenshot
+      // Joined fetch for payments screenshot and order items
       const { data, error } = await supabase
         .from('orders')
-        .select('*, payments(*)')
+        .select('*, payments(*), order_items(*)')
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      if (data) setOrders(data);
+      if (data) {
+        setOrders(data);
+        // Refresh selected order if it is open
+        if (selectedOrder) {
+          const updated = data.find((o: any) => o.id === selectedOrder.id);
+          if (updated) setSelectedOrder(updated);
+        }
+      }
     } catch (err: any) {
       addToast(err.message, 'error');
     } finally {
@@ -104,23 +112,11 @@ export const AdminOrders = () => {
     }
   };
 
-  const deleteOrder = async (id: string) => {
-    if (!window.confirm('Are you sure you want to permanently remove this order?')) return;
-    
-    try {
-      const { error } = await supabase.from('orders').delete().eq('id', id);
-      if (error) throw error;
-      addToast('Order deleted successfully', 'sweet');
-      fetchOrders();
-    } catch (err: any) {
-      addToast(err.message, 'error');
-    }
-  };
-
   const filteredOrders = orders.filter(o => {
     const searchLower = searchTerm.toLowerCase();
     const matchesSearch = (
       (o.id || '').toLowerCase().includes(searchLower) || 
+      (o.display_id || '').toLowerCase().includes(searchLower) ||
       (o.metadata?.display_id || '').toLowerCase().includes(searchLower) ||
       (o.customer_phone || '').includes(searchLower) || 
       ((o.customer_name || '').toLowerCase().includes(searchLower))
@@ -232,7 +228,7 @@ export const AdminOrders = () => {
                         <div className="space-y-1">
                           <div className="flex items-center gap-3">
                             <span className="text-[10px] font-black uppercase tracking-widest text-brand/40">Order Reference</span>
-                            <span className="bg-brand text-white px-3 py-1 rounded-full text-[10px] font-black tracking-tighter shadow-md group-hover:rotate-2 transition-transform">{order.metadata?.display_id || '#' + (order.id?.slice(0, 8).toUpperCase() || 'N/A')}</span>
+                           <span className="bg-brand text-white px-3 py-1 rounded-full text-[10px] font-black tracking-tighter shadow-md group-hover:rotate-2 transition-transform">{order.display_id || order.metadata?.display_id || '#' + (order.id?.slice(0, 8).toUpperCase() || 'N/A')}</span>
                           </div>
                           <h3 className="heading-serif text-3xl text-brand-dark">{order.customer_name || 'Walk-in Customer'}</h3>
                           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2">
@@ -310,25 +306,14 @@ export const AdminOrders = () => {
                       </div>
                     )}
 
-                    {/* Items Table */}
-                    <div className="bg-brand-light/5 p-8 sm:p-10">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30 mb-6 ml-1">Kitchen Ticket</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {order.items?.map((item: any, idx: number) => (
-                          <div key={idx} className="flex items-center justify-between bg-white/60 p-4 rounded-[1.5rem] border border-white shadow-soft group-hover:border-brand/10 transition-colors">
-                            <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 bg-blush rounded-xl flex items-center justify-center text-xl shadow-inner shrink-0 overflow-hidden">
-                                 {item.images && item.images[0] ? <img src={item.images[0]} className="w-full h-full object-cover" /> : '🧁'}
-                              </div>
-                              <div>
-                                <p className="font-black text-brand-dark text-sm leading-tight uppercase tracking-tight">{item.name || 'Treat'}</p>
-                                <p className="text-xs font-bold text-brand-dark/40 mt-1">₹{item.price} x {item.quantity}</p>
-                              </div>
-                            </div>
-                            <div className="w-10 h-10 bg-brand text-white rounded-xl flex items-center justify-center font-black text-lg">
-                              {item.quantity}
-                            </div>
-                          </div>
+                    {/* Items Preview */}
+                    <div className="bg-brand-light/5 px-8 py-5 border-y border-brand/5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-brand-dark/30 mr-2">Items Preview:</span>
+                        {((order.order_items && order.order_items.length > 0) ? order.order_items : (order.items || [])).map((item: any, idx: number) => (
+                          <span key={idx} className="bg-white/80 border border-brand/10 text-brand-dark px-3 py-1.5 rounded-xl text-xs font-bold shadow-soft">
+                            {item.product_name || item.name || 'Treat'} <span className="text-brand font-black ml-1">x{item.quantity}</span>
+                          </span>
                         ))}
                       </div>
                     </div>
@@ -354,6 +339,12 @@ export const AdminOrders = () => {
 
                       <div className="flex items-center gap-3">
                         <button 
+                          onClick={() => setSelectedOrder(order)}
+                          className="flex items-center gap-2 px-6 py-3 bg-brand text-white rounded-xl border border-brand font-black text-[10px] uppercase tracking-widest hover:bg-brand-dark hover:scale-105 active:scale-95 transition-all shadow-md"
+                        >
+                          <Eye size={16} /> View Details
+                        </button>
+                        <button 
                           onClick={async () => {
                             addToast('Generating invoice PDF...', 'sweet');
                             await generateInvoicePDF(order, settings);
@@ -368,13 +359,6 @@ export const AdminOrders = () => {
                           title="Cancel Order"
                         >
                           <XCircle size={20} />
-                        </button>
-                        <button 
-                          onClick={() => deleteOrder(order.id)}
-                          className="p-3 text-brand-dark/20 hover:bg-red-600 hover:text-white rounded-xl transition-all border border-transparent"
-                          title="Delete Record"
-                        >
-                          <Trash2 size={20} />
                         </button>
                       </div>
                     </div>
@@ -418,6 +402,225 @@ export const AdminOrders = () => {
                    </a>
                 </div>
              </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Details Modal */}
+      <AnimatePresence>
+        {selectedOrder && (
+          <div className="fixed inset-0 bg-brand-dark/60 backdrop-blur-xl z-[90] flex items-center justify-center p-4 overflow-y-auto" onClick={() => setSelectedOrder(null)}>
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] shadow-2xl border border-brand/10 w-full max-w-4xl max-h-[90vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="p-8 border-b border-brand/5 flex justify-between items-start">
+                <div>
+                  <div className="flex items-center gap-3 mb-1">
+                    <span className="bg-brand text-white px-3 py-1 rounded-full text-[10px] font-black tracking-tighter shadow-md">
+                      {selectedOrder.display_id || selectedOrder.metadata?.display_id || '#' + (selectedOrder.id?.slice(0, 8).toUpperCase() || 'N/A')}
+                    </span>
+                    <span className="text-[10px] font-black text-brand-dark/30 uppercase tracking-widest">
+                      {selectedOrder.order_source || 'website'} order
+                    </span>
+                  </div>
+                  <h3 className="heading-serif text-3xl text-brand-dark">Order Details</h3>
+                  <p className="text-xs font-bold text-brand-dark/40 mt-1">
+                    Placed on {new Date(selectedOrder.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setSelectedOrder(null)} 
+                  className="w-10 h-10 rounded-2xl bg-brand/5 hover:bg-brand/10 text-brand-dark/60 flex items-center justify-center transition-all"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* Left Column: Items details */}
+                <div className="lg:col-span-7 space-y-6">
+                  <div>
+                    <h4 className="text-xs font-black text-brand-dark/30 uppercase tracking-[0.2em] mb-4">Kitchen Ticket & Items</h4>
+                    <div className="space-y-3">
+                      {((selectedOrder.order_items && selectedOrder.order_items.length > 0) ? selectedOrder.order_items : (selectedOrder.items || [])).map((item: any, idx: number) => {
+                        const unitPrice = item.unit_price || item.price || 0;
+                        const totalPrice = item.total_price || (unitPrice * item.quantity) || 0;
+                        return (
+                          <div key={idx} className="flex items-center justify-between bg-brand-light/5 p-4 rounded-2xl border border-brand/5 shadow-sm">
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 bg-blush rounded-xl flex items-center justify-center text-lg shadow-inner shrink-0">
+                                🧁
+                              </div>
+                              <div>
+                                <p className="font-black text-brand-dark text-sm uppercase tracking-tight">{item.product_name || item.name || 'Treat'}</p>
+                                <p className="text-xs font-bold text-brand-dark/40">₹{unitPrice} x {item.quantity}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-black text-brand-dark text-sm">₹{totalPrice}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Calculations */}
+                  <div className="bg-cream/20 p-6 rounded-2xl border border-brand/5 space-y-3">
+                    <div className="flex justify-between text-xs font-bold text-brand-dark/60">
+                      <span>Subtotal:</span>
+                      <span>₹{selectedOrder.subtotal || (selectedOrder.total - (selectedOrder.delivery_charge || 0) + (selectedOrder.discount_amount || 0))}</span>
+                    </div>
+                    {selectedOrder.discount_amount > 0 && (
+                      <div className="flex justify-between text-xs font-bold text-green-600">
+                        <span>Discount Applied ({selectedOrder.coupon_code || 'Coupon'}):</span>
+                        <span>- ₹{selectedOrder.discount_amount}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-xs font-bold text-brand-dark/60">
+                      <span>Delivery Charge:</span>
+                      <span>{selectedOrder.delivery_charge === 0 ? 'FREE' : `₹${selectedOrder.delivery_charge}`}</span>
+                    </div>
+                    <div className="border-t border-brand/10 pt-3 flex justify-between text-sm font-black text-brand-dark">
+                      <span>Grand Total:</span>
+                      <span className="text-lg text-brand font-black">₹{selectedOrder.total}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column: Customer & Payments & Status actions */}
+                <div className="lg:col-span-5 space-y-6">
+                  {/* Customer Info */}
+                  <div className="bg-brand-light/5 p-6 rounded-2xl border border-brand/5 space-y-4">
+                    <h4 className="text-xs font-black text-brand-dark/30 uppercase tracking-[0.2em]">Customer Information</h4>
+                    <div className="space-y-3 text-sm">
+                      <div>
+                        <p className="text-[10px] font-black text-brand-dark/40 uppercase">Name</p>
+                        <p className="font-bold text-brand-dark">{selectedOrder.customer_name || 'Walk-in Customer'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-brand-dark/40 uppercase">Phone</p>
+                        <p className="font-bold text-brand-dark">{selectedOrder.customer_phone}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-brand-dark/40 uppercase">Delivery Address</p>
+                        <p className="font-bold text-brand-dark leading-tight">{selectedOrder.address}</p>
+                      </div>
+                      {selectedOrder.metadata?.delivery_time_range && (
+                        <div>
+                          <p className="text-[10px] font-black text-brand-dark/40 uppercase">Delivery Window</p>
+                          <p className="font-bold text-brand">{selectedOrder.metadata.delivery_time_range}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Payment Details & Verification */}
+                  {(() => {
+                    const payment = selectedOrder.payments?.[0];
+                    if (payment || selectedOrder.payment_method === 'upi') {
+                      return (
+                        <div className="bg-purple-50/50 p-6 rounded-2xl border border-purple-100 space-y-4">
+                          <h4 className="text-xs font-black text-purple-600/60 uppercase tracking-[0.2em]">UPI Payment Proof</h4>
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${selectedOrder.payment_status === 'verified' || payment?.status === 'verified' ? 'bg-green-500' : 'bg-purple-500 animate-pulse'}`} />
+                              <p className="font-black text-brand-dark text-xs uppercase">Status: {selectedOrder.payment_status || payment?.status || 'Pending'}</p>
+                            </div>
+                            
+                            {payment?.screenshot_url && (
+                              <button 
+                                onClick={() => setSelectedScreenshot(payment.screenshot_url)}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white text-purple-600 rounded-xl border border-purple-100 font-bold text-xs hover:bg-purple-50 transition-all shadow-sm"
+                              >
+                                <Eye size={14} /> View Screenshot
+                              </button>
+                            )}
+
+                            {(selectedOrder.payment_status !== 'verified' && payment?.status !== 'verified') && (
+                              <div className="space-y-2">
+                                <input 
+                                  type="text"
+                                  placeholder="Enter UTR Number"
+                                  value={utrInputs[selectedOrder.id] || ''}
+                                  onChange={(e) => setUtrInputs(prev => ({...prev, [selectedOrder.id]: e.target.value}))}
+                                  className="w-full px-4 py-2 border border-purple-100 rounded-xl text-xs font-bold text-brand-dark outline-none focus:border-purple-300 transition-all bg-white"
+                                />
+                                <button 
+                                  onClick={async () => {
+                                    await verifyPayment(selectedOrder.id, payment?.id, utrInputs[selectedOrder.id]);
+                                    setSelectedOrder((prev: any) => prev ? { ...prev, payment_status: 'verified', status: 'preparing' } : null);
+                                  }}
+                                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md hover:bg-purple-700 transition-all"
+                                >
+                                  <CheckCircle2 size={14} /> Verify Payment
+                                </button>
+                              </div>
+                            )}
+                            
+                            {selectedOrder.payment_reference && (
+                              <div className="pt-2 border-t border-purple-100">
+                                <p className="text-[9px] font-black text-purple-500 uppercase">Verification Reference / UTR</p>
+                                <p className="font-bold text-xs text-brand-dark font-mono">{selectedOrder.payment_reference}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="bg-brand-light/5 p-6 rounded-2xl border border-brand/5">
+                        <h4 className="text-xs font-black text-brand-dark/40 uppercase tracking-[0.2em] mb-2">Payment Method</h4>
+                        <p className="font-bold text-sm text-brand-dark uppercase">{selectedOrder.payment_method?.replace(/_/g, ' ') || 'Cash / COD'}</p>
+                        <p className="text-xs text-brand-dark/40 mt-1 uppercase">Payment Status: {selectedOrder.payment_status || 'Pending'}</p>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Actions inside Modal */}
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black text-brand-dark/30 uppercase tracking-[0.2em]">Quick Status Updates</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {['pending', 'preparing', 'ready', 'out_for_delivery', 'completed'].map(s => (
+                        <button 
+                          key={s}
+                          onClick={async () => {
+                            await updateOrderStatus(selectedOrder.id, s);
+                            setSelectedOrder((prev: any) => prev ? { ...prev, status: s } : null);
+                          }}
+                          className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+                            selectedOrder.status === s 
+                            ? 'bg-brand text-white border-brand shadow-sm scale-105' 
+                            : 'bg-white text-brand-dark/40 border-brand/10 hover:border-brand/30'
+                          }`}
+                        >
+                          {s.replace(/_/g, ' ')}
+                        </button>
+                      ))}
+                      <button 
+                        onClick={async () => {
+                          await updateOrderStatus(selectedOrder.id, 'cancelled');
+                          setSelectedOrder((prev: any) => prev ? { ...prev, status: 'cancelled' } : null);
+                        }}
+                        className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+                          selectedOrder.status === 'cancelled' 
+                          ? 'bg-red-600 text-white border-red-600 shadow-sm scale-105' 
+                          : 'bg-white text-red-500 border-red-100 hover:bg-red-50'
+                        }`}
+                      >
+                        Cancel Order
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </div>
         )}
       </AnimatePresence>

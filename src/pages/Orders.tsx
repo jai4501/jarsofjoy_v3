@@ -25,7 +25,7 @@ export const Orders = () => {
   const fetchOrders = async () => {
     const { data } = await supabase
       .from('orders')
-      .select('*, payments(*)')
+      .select('*, payments(*), order_items(*)')
       .eq('user_id', user?.id || '')
       .order('created_at', { ascending: false });
     
@@ -125,17 +125,25 @@ export const Orders = () => {
                 <div className="space-y-4">
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] font-black uppercase tracking-widest text-brand-dark/30">Order</span>
-                    <span className="font-bold text-sm tracking-tighter">#{order.id?.slice(0, 8).toUpperCase() || 'N/A'}</span>
+                    <span className="font-bold text-sm tracking-tighter">#{order.display_id || order.metadata?.display_id || order.id?.slice(0, 8).toUpperCase() || 'N/A'}</span>
                     <span className="w-1 h-1 bg-brand/20 rounded-full" />
                     <span className="text-[10px] font-bold text-brand-dark/40">{new Date(order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
                   </div>
                   
                   <div className="flex flex-wrap gap-2">
-                    {order.items.map((item: any, idx: number) => (
-                      <div key={idx} className="bg-brand/5 px-3 py-1 rounded-full text-[10px] font-bold text-brand">
-                        {item.name} x {item.quantity}
-                      </div>
-                    ))}
+                    {order.order_items && order.order_items.length > 0 ? (
+                      order.order_items.map((item: any, idx: number) => (
+                        <div key={idx} className="bg-brand/5 px-3 py-1 rounded-full text-[10px] font-bold text-brand">
+                          {item.product_name || 'Treat'} x {item.quantity}
+                        </div>
+                      ))
+                    ) : (
+                      (order.items || []).map((item: any, idx: number) => (
+                        <div key={idx} className="bg-brand/5 px-3 py-1 rounded-full text-[10px] font-bold text-brand">
+                          {item.name || 'Treat'} x {item.quantity}
+                        </div>
+                      ))
+                    )}
                   </div>
 
                   <div className="flex items-center gap-3 text-brand-dark/50">

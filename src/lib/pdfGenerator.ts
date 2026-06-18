@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { supabase } from './supabase';
 
 // Type definitions for internal use
 interface Product {
@@ -13,20 +14,6 @@ interface Product {
   variations?: { name: string; price: number }[];
 }
 
-interface OrderItem {
-  name: string;
-  quantity: number;
-  price: number;
-}
-
-interface Order {
-  id: string;
-  created_at: string;
-  total: number;
-  items: OrderItem[];
-  address: string;
-  customer_name?: string;
-}
 
 const BRAND_COLOR: [number, number, number] = [159, 18, 57]; // #9F1239 - Deep Berry
 const TEXT_COLOR: [number, number, number] = [46, 12, 28]; // Darker Berry for text
@@ -232,7 +219,7 @@ export const generateMenuPDF = async (products: Product[], businessInfo: Record<
   doc.save(`${info.name.replace(/\s+/g, '_')}_Menu.pdf`);
 };
 
-export const generateInvoicePDF = async (order: Order, businessInfo: Record<string, string>) => {
+export const generateInvoicePDF = async (order: any, businessInfo: Record<string, string>) => {
   const doc = new jsPDF();
   const info = {
     name: businessInfo.business_name || 'JARS OF JOY',
@@ -288,12 +275,42 @@ export const generateInvoicePDF = async (order: Order, businessInfo: Record<stri
   doc.text('INVOICE DETAILS:', 130, detailsY);
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
-  const orderId = order.id?.slice(0, 8).toUpperCase() || 'UNKNOWN';
+  
+  const orderId = order.display_id || order.metadata?.display_id || order.id?.slice(0, 8).toUpperCase() || 'UNKNOWN';
   doc.text(`Invoice No: #INV-${orderId}`, 130, detailsY + 7);
   doc.text(`Order Date: ${new Date(order.created_at).toLocaleDateString('en-IN')}`, 130, detailsY + 13);
   doc.text(`FSSAI No: ${info.fssai}`, 130, detailsY + 19);
 
-  const tableData = (order.items || []).map((item, idx) => [
+  // Fetch order items if they aren't preloaded
+  let orderItems = order.order_items;
+  if (!orderItems || orderItems.length === 0) {
+    try {
+      const { data, error } = await supabase
+        .from('order_items')
+        .select('*')
+        .eq('order_id', order.id);
+      if (!error && data) {
+        orderItems = data;
+      }
+    } catch (err) {
+      console.error('Error fetching order items:', err);
+    }
+  }
+
+  // Convert orderItems or fallback order.items to unified format for rendering
+  const itemsToRender = (orderItems && orderItems.length > 0)
+    ? orderItems.map((oi: any) => ({
+        name: oi.product_name || 'Treat',
+        quantity: Number(oi.quantity) || 1,
+        price: Number(oi.unit_price) || 0
+      }))
+    : (order.items || []).map((item: any) => ({
+        name: item.name || 'Treat',
+        quantity: Number(item.quantity) || 1,
+        price: Number(item.price) || 0
+      }));
+
+  const tableData = itemsToRender.map((item: any, idx: number) => [
     idx + 1,
     item.name,
     item.quantity,
@@ -313,10 +330,10 @@ export const generateInvoicePDF = async (order: Order, businessInfo: Record<stri
 
   let currentYPos = (doc as any).lastAutoTable.finalY + 10;
   
-  const subtotal = (order as any).subtotal || (order.items || []).reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const mrpTotal = (order.items || []).reduce((sum, item) => sum + Math.round(item.price * 1.3) * item.quantity, 0);
+  const subtotal = order.subtotal || itemsToRender.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
+  const mrpTotal = itemsToRender.reduce((sum: number, item: any) => sum + Math.round(item.price * 1.3) * item.quantity, 0);
   const discountOnMrp = mrpTotal - subtotal;
-  const delivery = (order as any).delivery_charge || 0;
+  const delivery = order.delivery_charge || 0;
   
   let couponDiscount = 0;
   if (order.total && order.total < subtotal + delivery) {

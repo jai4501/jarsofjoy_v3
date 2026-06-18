@@ -235,7 +235,7 @@ export const AdminLayout = () => {
                       recentOrders.map(order => (
                         <div key={order.id} className="p-5 bg-white/40 rounded-[2rem] border border-white/80 flex justify-between items-center shadow-sm">
                           <div>
-                            <p className="font-black text-brand-dark leading-tight">Order #{order.id.slice(0, 8).toUpperCase()}</p>
+                            <p className="font-black text-brand-dark leading-tight">Order #{order.display_id || order.metadata?.display_id || order.id.slice(0, 8).toUpperCase()}</p>
                             <p className="text-[10px] font-bold text-brand-dark/65 mt-1 uppercase tracking-widest">{order.customer_name || order.customer_phone}</p>
                           </div>
                           <div className="text-right">
