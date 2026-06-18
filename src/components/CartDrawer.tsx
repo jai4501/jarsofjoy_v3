@@ -83,9 +83,10 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryType] = useState<'pickup' | 'delivery'>('delivery');
   const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+
   const [placedOrderId, setPlacedOrderId] = useState('');
   const [placedOrderUuid, setPlacedOrderUuid] = useState('');
+  const [upiTxnRef, setUpiTxnRef] = useState('');
   const [orderGrandTotal, setOrderGrandTotal] = useState(0);
   const [userUpiId, setUserUpiId] = useState('');
   const [savingUpiId, setSavingUpiId] = useState(false);
@@ -844,122 +845,116 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       }
     }
 
-    setSubmitting(true);
-    try {
-      const addressVal = deliveryType === 'pickup' ? 'Store Pickup' : deliveryAddress;
+    // Capture values synchronously for background placement
+    const itemsToInsert = items.map(item => ({ id: item.id, quantity: item.quantity, name: item.name, price: item.price }));
+    const addressVal = deliveryType === 'pickup' ? 'Store Pickup' : deliveryAddress;
+    const finalTotal = total - discount + deliveryFee;
+    const subTotalVal = total;
+    const discountVal = discount;
+    const couponVal = appliedCoupon ? appliedCoupon.code : null;
+    const deliveryFeeVal = deliveryFee;
+    const deliveryTypeVal = deliveryType;
+    const deliveryTimeRangeVal = deliveryTimeRange;
+    const paymentMethodVal = paymentMethod;
 
-      // Generate custom Order ID client-side instantaneously using random suffix
-      const todayStr = new Date().toISOString().split('T')[0];
-      const prefix = 'SFOID';
-      const seq = Math.floor(1000 + Math.random() * 9000); // 4-digit random sequence
-      const displayId = `JOJ-${prefix}-${todayStr}-${seq}`;
-      const finalTotal = total - discount + deliveryFee;
-
-      // Insert order directly
-      const { data: orderData, error: orderError } = await (supabase.from('orders') as any)
-        .insert([{
-          user_id: user?.id || null,
-          customer_name: customerName,
-          customer_phone: customerPhone,
-          address: addressVal,
-          items: items.map(item => ({ id: item.id, quantity: item.quantity })),
-          total: finalTotal,
-          subtotal: total,
-          discount_amount: discount,
-          coupon_code: appliedCoupon ? appliedCoupon.code : null,
-          delivery_charge: deliveryFee,
-          status: 'pending',
-          payment_method: paymentMethod,
-          payment_status: paymentMethod === 'upi' ? 'verification_pending' : 'pending',
-          order_source: 'website',
-          delivery_type: deliveryType,
-          display_id: displayId,
-          metadata: { 
-            display_id: displayId,
-            ...(deliveryTimeRange ? { delivery_time_range: deliveryTimeRange } : {})
-          }
-        }])
-        .select()
-        .single();
-
-      if (orderError) throw orderError;
-
-      // Insert order items directly
-      const orderItems = items.map((item) => {
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const isValidUuid = uuidRegex.test(item.id);
-        
-        return {
-          order_id: (orderData as any).id,
-          product_id: isValidUuid ? item.id : null,
-          product_name: item.name,
-          quantity: item.quantity,
-          unit_price: item.price,
-          total_price: item.price * item.quantity
-        };
-      });
-
-      const { error: itemsError } = await (supabase.from('order_items') as any).insert(orderItems);
-      if (itemsError) throw itemsError;
-
-      setPlacedOrderId((orderData as any).display_id || (orderData as any).metadata?.display_id || (orderData as any).id);
-      setPlacedOrderUuid((orderData as any).id);
-      setOrderGrandTotal(finalTotal);
-      
-      if (paymentMethod === 'upi') {
-        setStep('upi_payment');
-        clearCart(); // Clear the items immediately as the order is placed!
-        addToast('Order created! Please complete payment.', 'sweet');
-      } else {
-        setStep('success');
-        clearCart();
-        addToast('Order placed successfully!', 'sweet');
-      }
-
-      // Send Telegram alert in background (non-blocking)
-      if (paymentMethod === 'upi') {
-        (async () => {
-          try {
-            const { data: botTokenData } = await (supabase
-              .from('site_content') as any)
-              .select('value')
-              .eq('key', 'telegram_bot_token')
-              .maybeSingle();
-              
-            const { data: chatIdData } = await (supabase
-              .from('site_content') as any)
-              .select('value')
-              .eq('key', 'telegram_chat_id')
-              .maybeSingle();
-
-            const token = (botTokenData as any)?.value;
-            const chatId = (chatIdData as any)?.value;
-
-            if (token && chatId) {
-              const msg = `🔔 <b>New UPI Payment Pending</b>\n\n<b>Order ID:</b> ${displayId}\n<b>Name:</b> ${customerName}\n<b>Phone:</b> ${customerPhone}\n<b>Amount:</b> ₹${finalTotal}\n\nPlease confirm this payment in the Admin Orders panel.`;
-              await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  chat_id: chatId,
-                  text: msg,
-                  parse_mode: 'HTML'
-                })
-              });
-            } else {
-              console.warn('Telegram token or chat ID is missing in database site_content.');
-            }
-          } catch (tErr) {
-            console.error('Failed to send Telegram alert in background:', tErr);
-          }
-        })();
-      }
-    } catch (err: any) {
-      addToast(err.message || 'Failed to place order', 'error');
-    } finally {
-      setSubmitting(false);
+    // Immediately transition UI and clear cart for a lightning-fast experience
+    setOrderGrandTotal(finalTotal);
+    if (paymentMethodVal === 'upi') {
+      const tempTxn = `JOJ-PAY-${Date.now()}`;
+      setUpiTxnRef(tempTxn);
+      setStep('upi_payment');
+      clearCart();
+      addToast('Order created! Please complete payment.', 'sweet');
+    } else {
+      setStep('success');
+      clearCart();
+      addToast('Order placed successfully!', 'sweet');
     }
 
+    // Run Supabase transactions in the background
+    (async () => {
+      try {
+        // Insert order directly (display_id is generated by the database trigger)
+        const { data: orderData, error: orderError } = await (supabase.from('orders') as any)
+          .insert([{
+            user_id: user?.id || null,
+            customer_name: customerName,
+            customer_phone: customerPhone,
+            address: addressVal,
+            items: itemsToInsert.map(item => ({ id: item.id, quantity: item.quantity })),
+            total: finalTotal,
+            subtotal: subTotalVal,
+            discount_amount: discountVal,
+            coupon_code: couponVal,
+            delivery_charge: deliveryFeeVal,
+            status: 'pending',
+            payment_method: paymentMethodVal,
+            payment_status: paymentMethodVal === 'upi' ? 'verification_pending' : 'pending',
+            order_source: 'website',
+            delivery_type: deliveryTypeVal,
+            metadata: { 
+              ...(deliveryTimeRangeVal ? { delivery_time_range: deliveryTimeRangeVal } : {})
+            }
+          }])
+          .select()
+          .single();
+
+        if (orderError) throw orderError;
+
+        const generatedDisplayId = (orderData as any).display_id || (orderData as any).id;
+
+        // Insert order items directly
+        const orderItems = itemsToInsert.map((item) => {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const isValidUuid = uuidRegex.test(item.id);
+          
+          return {
+            order_id: (orderData as any).id,
+            product_id: isValidUuid ? item.id : null,
+            product_name: item.name,
+            quantity: item.quantity,
+            unit_price: item.price,
+            total_price: item.price * item.quantity
+          };
+        });
+
+        const { error: itemsError } = await (supabase.from('order_items') as any).insert(orderItems);
+        if (itemsError) throw itemsError;
+
+        // Update states for congrats screen
+        setPlacedOrderId(generatedDisplayId);
+        setPlacedOrderUuid((orderData as any).id);
+
+        // Send Telegram alert in background via backend server (non-blocking)
+        if (paymentMethodVal === 'upi') {
+          try {
+            const { data: urlData } = await (supabase
+              .from('site_content') as any)
+              .select('value')
+              .eq('key', 'whatsapp_backend_url')
+              .maybeSingle();
+            
+            const backendUrl = (urlData as any)?.value || `http://${window.location.hostname}:3001`;
+
+            await fetch(`${backendUrl}/api/notify-telegram`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                displayId: generatedDisplayId,
+                customerName,
+                customerPhone,
+                finalTotal
+              })
+            });
+          } catch (tErr) {
+            console.error('Failed to send Telegram alert via backend server:', tErr);
+          }
+        }
+      } catch (err: any) {
+        console.error('Background order placement failed:', err);
+        addToast(err.message || 'Failed to place order securely', 'error');
+      }
+    })();
   };
 
   const handleSaveUserUpiId = async () => {
@@ -1640,7 +1635,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                     <div className="space-y-2 px-6">
                       <h3 className="font-black text-brand-dark text-xl">Pay ₹{orderGrandTotal} via UPI</h3>
                       <p className="text-[10px] text-brand-dark/55 leading-relaxed uppercase tracking-wider">
-                        Order Reference: {placedOrderId}
+                        Complete your payment using any UPI app below
                       </p>
                     </div>
 
@@ -1651,10 +1646,10 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                       </p>
                       <div className="grid grid-cols-2 gap-3">
                         {[
-                          { name: 'PhonePe', color: 'bg-[#5f259f]', link: `phonepe://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${placedOrderId}` },
-                          { name: 'Paytm', color: 'bg-[#00baf2]', link: `paytmmp://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${placedOrderId}` },
-                          { name: 'GPay / Generic', color: 'bg-[#1a73e8]', link: `upi://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${placedOrderId}` },
-                          { name: 'BHIM UPI', color: 'bg-[#e56b1f]', link: `upi://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${placedOrderId}` }
+                          { name: 'PhonePe', color: 'bg-[#5f259f]', link: `phonepe://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${upiTxnRef}` },
+                          { name: 'Paytm', color: 'bg-[#00baf2]', link: `paytmmp://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${upiTxnRef}` },
+                          { name: 'GPay / Generic', color: 'bg-[#1a73e8]', link: `upi://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${upiTxnRef}` },
+                          { name: 'BHIM UPI', color: 'bg-[#e56b1f]', link: `upi://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${upiTxnRef}` }
                         ].map((app) => (
                           <a
                             key={app.name}
@@ -1728,7 +1723,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                         <div className="flex flex-col items-center justify-center space-y-3 bg-brand-light/5 p-4 rounded-3xl border border-brand/5">
                           <div className="bg-white p-3 rounded-2xl shadow-soft inline-block border border-brand/10">
                             <QRCodeCanvas
-                              value={`upi://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${placedOrderId}`}
+                              value={`upi://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${upiTxnRef}`}
                               size={160}
                               level="H"
                               includeMargin={true}
@@ -1804,14 +1799,27 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                           ? 'Your order has been successfully created and your payment is under verification. You will be notified once the payment has been verified. 🧁✨'
                           : 'Your order has been recorded. Let\'s redirect to WhatsApp to send your receipt and confirm delivery details.'}
                       </p>
+                      
+                      {placedOrderId ? (
+                        <div className="mt-4 inline-block px-4 py-2 bg-brand/5 border border-brand/10 rounded-2xl">
+                          <p className="text-[10px] font-black text-brand uppercase tracking-widest leading-none">Order ID</p>
+                          <p className="text-sm font-bold text-brand-dark font-mono mt-1">#{placedOrderId}</p>
+                        </div>
+                      ) : (
+                        <div className="mt-4 inline-block px-4 py-2 bg-brand/5 border border-brand/10 rounded-2xl animate-pulse">
+                          <p className="text-[10px] font-black text-brand uppercase tracking-widest leading-none">Saving Order...</p>
+                          <p className="text-sm font-bold text-brand-dark/40 font-mono mt-1">Please wait</p>
+                        </div>
+                      )}
                     </div>
 
                     <div className="pt-6 w-full max-w-xs space-y-3">
                       <Button3D 
                         onClick={handleWhatsAppRedirect} 
-                        className="w-full h-14 bg-brand text-white flex items-center justify-center gap-2 text-xs uppercase tracking-widest rounded-full shadow-lg hover:bg-brand-dark"
+                        disabled={!placedOrderId}
+                        className="w-full h-14 bg-brand text-white flex items-center justify-center gap-2 text-xs uppercase tracking-widest rounded-full shadow-lg hover:bg-brand-dark disabled:opacity-50"
                       >
-                        <Send size={16} /> Send WhatsApp Message
+                        <Send size={16} /> {placedOrderId ? 'Send WhatsApp Message' : 'Loading Order Details...'}
                       </Button3D>
                       <button
                         onClick={() => {
@@ -1905,10 +1913,9 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                     ) : (
                       <Button3D 
                         onClick={handlePlaceOrder}
-                        disabled={submitting}
                         className="w-full h-12 text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-luxury flex items-center justify-center gap-2"
                       >
-                        {submitting ? 'Placing Order...' : 'Confirm Order'}
+                        Confirm Order
                       </Button3D>
                     )}
                   </div>

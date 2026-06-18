@@ -916,11 +916,27 @@ app.post('/api/orders/place', async (req, res) => {
       const msg = `🔔 <b>New UPI Payment Pending</b>\n\n<b>Order ID:</b> ${displayId}\n<b>Name:</b> ${customer_name}\n<b>Phone:</b> ${customer_phone}\n<b>Amount:</b> ₹${finalTotal}\n\nPlease confirm this payment in the Admin Orders panel.`;
       sendTelegramMessage(msg);
     }
-
     res.json({ success: true, order });
   } catch (err) {
     console.error('Order placement error:', err);
     res.status(500).json({ error: err.message || 'Failed to place order securely' });
+  }
+});
+
+// 3.5. Notify Telegram secure endpoint
+app.post('/api/notify-telegram', async (req, res) => {
+  const { displayId, customerName, customerPhone, finalTotal } = req.body;
+  if (!displayId || !customerName || !customerPhone || !finalTotal) {
+    return res.status(400).json({ error: 'Missing required parameters' });
+  }
+
+  try {
+    const msg = `🔔 <b>New UPI Payment Pending</b>\n\n<b>Order ID:</b> ${displayId}\n<b>Name:</b> ${customerName}\n<b>Phone:</b> ${customerPhone}\n<b>Amount:</b> ₹${finalTotal}\n\nPlease confirm this payment in the Admin Orders panel.`;
+    await sendTelegramMessage(msg);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to send telegram notification:', err);
+    res.status(500).json({ error: err.message || 'Failed to send notification' });
   }
 });
 
