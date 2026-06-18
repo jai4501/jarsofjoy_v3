@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingBag, X, Plus, Minus, Trash2, ArrowLeft, Send, CheckCircle2, Check, RefreshCw, Edit, Ticket, Clock, MapPin } from 'lucide-react';
+import { ShoppingBag, X, Plus, Minus, Trash2, ArrowLeft, CheckCircle2, Check, RefreshCw, Edit, Ticket, Clock, MapPin } from 'lucide-react';
 import { useCartStore } from '../store/useCartStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useUserStore } from '../store/useUserStore';
@@ -78,20 +78,12 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const { user, profile } = useUserStore();
   const { addToast } = useToastStore();
 
-  const [step, setStep] = useState<'cart' | 'checkout' | 'upi_payment' | 'success'>(() => {
+  const [step, setStep] = useState<'cart' | 'checkout' | 'upi_payment'>(() => {
     const savedStep = localStorage.getItem('joj_checkout_step');
-    const congratsShown = localStorage.getItem('joj_congrats_shown') === 'true';
-    if (savedStep === 'success' && congratsShown) {
-      // Already seen the congrats screen, clear it to prevent sticky congrats state on reloads
-      localStorage.removeItem('joj_checkout_step');
-      localStorage.removeItem('joj_placed_order_id');
-      localStorage.removeItem('joj_placed_order_uuid');
-      localStorage.removeItem('joj_upi_txn_ref');
-      localStorage.removeItem('joj_order_grand_total');
-      localStorage.removeItem('joj_congrats_shown');
-      return 'cart';
+    if (savedStep === 'upi_payment' || savedStep === 'checkout') {
+      return savedStep as any;
     }
-    return (savedStep as any) || 'cart';
+    return 'cart';
   });
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -114,11 +106,8 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
 
   // Sync checkout states to localStorage to survive mobile OS background suspensions
   useEffect(() => {
-    if (step === 'upi_payment' || step === 'success') {
+    if (step === 'upi_payment' || step === 'checkout') {
       localStorage.setItem('joj_checkout_step', step);
-    }
-    if (step === 'success') {
-      localStorage.setItem('joj_congrats_shown', 'true');
     }
   }, [step]);
 
@@ -146,19 +135,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     }
   }, [orderGrandTotal]);
 
-  const resetCheckoutState = () => {
-    setStep('cart');
-    setPlacedOrderId('');
-    setPlacedOrderUuid('');
-    setUpiTxnRef('');
-    setOrderGrandTotal(0);
-    localStorage.removeItem('joj_checkout_step');
-    localStorage.removeItem('joj_placed_order_id');
-    localStorage.removeItem('joj_placed_order_uuid');
-    localStorage.removeItem('joj_upi_txn_ref');
-    localStorage.removeItem('joj_order_grand_total');
-    localStorage.removeItem('joj_congrats_shown');
-  };
+
   const [showQr, setShowQr] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi'>('upi');
   const [deliveryTimeRange, setDeliveryTimeRange] = useState<'standard' | 'evening' | 'weekend'>('standard');
@@ -523,8 +500,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const [landmark, setLandmark] = useState('');
   const [postOffices, setPostOffices] = useState<string[]>([]);
 
-  // Fetch settings info
-  const whatsappNumber = getSetting('whatsapp_number', '+917695964392');
+
 
   const fetchUserAddresses = async (userId: string, selectId?: string) => {
     const { data } = await (supabase
@@ -551,10 +527,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   useEffect(() => {
     if (isOpen) {
       const savedStep = localStorage.getItem('joj_checkout_step');
-      const congratsShown = localStorage.getItem('joj_congrats_shown') === 'true';
-      if (savedStep === 'success' && congratsShown) {
-        resetCheckoutState();
-      } else if (savedStep === 'success' || savedStep === 'upi_payment') {
+      if (savedStep === 'upi_payment' || savedStep === 'checkout') {
         setStep(savedStep as any);
       } else {
         setStep('cart');
@@ -617,12 +590,16 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     }
   }, [items, total, appliedCoupon]);
 
-  // Auto-advance to success screen when returning to the app after UPI app navigation
+  // Auto-advance and close drawer when returning to the app after UPI app navigation
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && step === 'upi_payment') {
-        setStep('success');
         setShowQr(false);
+        localStorage.setItem('joj_show_congrats', 'true');
+        localStorage.removeItem('joj_checkout_step');
+        setStep('cart');
+        onClose();
+        window.dispatchEvent(new Event('joj_order_success'));
         addToast('Payment marked as pending verification!', 'sweet');
       }
     };
@@ -634,7 +611,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleVisibilityChange);
     };
-  }, [step]);
+  }, [step, onClose]);
 
   const handlePincodeChange = async (val: string) => {
     const cleanVal = val.replace(/\D/g, '').slice(0, 6);
@@ -942,8 +919,13 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       clearCart();
       addToast('Order created! Please complete payment.', 'sweet');
     } else {
-      setStep('success');
       clearCart();
+      onClose();
+      localStorage.setItem('joj_show_congrats', 'true');
+      localStorage.setItem('joj_order_grand_total', String(finalTotal));
+      localStorage.removeItem('joj_checkout_step');
+      setStep('cart');
+      window.dispatchEvent(new Event('joj_order_success'));
       addToast('Order placed successfully!', 'sweet');
     }
 
@@ -1034,42 +1016,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   };
 
 
-  const handleWhatsAppRedirect = () => {
-    const orderIdShort = placedOrderId.startsWith('JOJ') ? placedOrderId : placedOrderId.slice(0, 8).toUpperCase();
-    const itemsDetails = items
-      .map((item) => `• ${item.name} (x${item.quantity}) - ₹${item.price * item.quantity}`)
-      .join('\n');
 
-    const addressVal = deliveryType === 'pickup' ? 'Store Pickup' : deliveryAddress;
-
-    let discountDetails = '';
-    if (appliedCoupon && discount > 0) {
-      discountDetails = `*Subtotal:* ₹${total}\n*Coupon Applied:* ${appliedCoupon.code} (- ₹${discount})\n`;
-    }
-
-    let deliveryDetails;
-    if (deliveryType === 'delivery') {
-      deliveryDetails = `*Delivery Charge:* ${deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`} (${distanceMode === 'local' ? 'Porter/Self <= 8km' : 'Shiprocket > 8km'})\n`;
-    } else {
-      deliveryDetails = `*Delivery Charge:* Store Pickup (Free)\n`;
-    }
-
-    const message = `🍯 *New Storefront Order placed!*\n\n` +
-      `*Order ID:* #INV-${orderIdShort}\n` +
-      `*Customer Name:* ${customerName}\n` +
-      `*Phone:* ${customerPhone}\n` +
-      `*Delivery Type:* ${deliveryType === 'pickup' ? 'Pickup 🏪' : 'Home Delivery 🚚'}\n` +
-      `*Address:* ${addressVal}\n\n` +
-      `*Items Ordered:*\n${itemsDetails}\n\n` +
-      discountDetails +
-      deliveryDetails +
-      `*Total Amount:* ₹${total - discount + deliveryFee}\n\n` +
-      `Please confirm my order! 💛`;
-
-    const cleanedNumber = whatsappNumber.replace(/[^0-9]/g, '');
-    const url = `https://wa.me/${cleanedNumber}?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank');
-  };
 
   return (
     <AnimatePresence>
@@ -1112,7 +1059,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                   <div>
                     <h2 className="text-xl font-black text-brand-dark leading-none">Your Sweet Jar</h2>
                     <p className="text-[9px] font-black uppercase text-brand-dark/30 tracking-widest mt-1">
-                      {step === 'success' ? 'Completed' : 'Review items'}
+                      Review items
                     </p>
                   </div>
                 </div>
@@ -1801,10 +1748,13 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                         </p>
                         <Button3D
                           onClick={() => {
-                            setStep('success');
+                            localStorage.setItem('joj_show_congrats', 'true');
+                            localStorage.removeItem('joj_checkout_step');
+                            setStep('cart');
                             clearCart();
-                            // Reset payment states
                             setShowQr(false);
+                            onClose();
+                            window.dispatchEvent(new Event('joj_order_success'));
                           }}
                           className="w-full h-12 text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-lg"
                         >
@@ -1815,66 +1765,12 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                   </motion.div>
                 )}
 
-                {/* STEP 3: SUCCESS ANIMATION VIEW */}
-                {step === 'success' && (
-                  <motion.div
-                    key="success-step"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="flex flex-col items-center justify-center py-12 text-center space-y-6"
-                  >
-                    <div className="w-20 h-20 bg-green-50 text-green-500 rounded-full flex items-center justify-center shadow-lg shadow-green-100/50">
-                      <CheckCircle2 size={44} className="stroke-[1.5]" />
-                    </div>
 
-                    <div className="space-y-2 max-w-sm">
-                      <h3 className="heading-serif text-2xl font-black text-brand-dark">
-                        {paymentMethod === 'upi' ? 'Congratulations! 🎉' : 'Sweetness Confirmed!'}
-                      </h3>
-                      <p className="text-xs font-semibold text-brand-dark/55 leading-relaxed">
-                        {paymentMethod === 'upi'
-                          ? 'Your order has been successfully created and your payment is under verification. You will be notified once the payment has been verified. 🧁✨'
-                          : 'Your order has been recorded. Let\'s redirect to WhatsApp to send your receipt and confirm delivery details.'}
-                      </p>
-                      
-                      {placedOrderId ? (
-                        <div className="mt-4 inline-block px-4 py-2 bg-brand/5 border border-brand/10 rounded-2xl">
-                          <p className="text-[10px] font-black text-brand uppercase tracking-widest leading-none">Order ID</p>
-                          <p className="text-sm font-bold text-brand-dark font-mono mt-1">#{placedOrderId}</p>
-                        </div>
-                      ) : (
-                        <div className="mt-4 inline-block px-4 py-2 bg-brand/5 border border-brand/10 rounded-2xl animate-pulse">
-                          <p className="text-[10px] font-black text-brand uppercase tracking-widest leading-none">Saving Order...</p>
-                          <p className="text-sm font-bold text-brand-dark/40 font-mono mt-1">Please wait</p>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="pt-6 w-full max-w-xs space-y-3">
-                      <Button3D 
-                        onClick={handleWhatsAppRedirect} 
-                        disabled={!placedOrderId}
-                        className="w-full h-14 bg-brand text-white flex items-center justify-center gap-2 text-xs uppercase tracking-widest rounded-full shadow-lg hover:bg-brand-dark disabled:opacity-50"
-                      >
-                        <Send size={16} /> {placedOrderId ? 'Send WhatsApp Message' : 'Loading Order Details...'}
-                      </Button3D>
-                      <button
-                        onClick={() => {
-                          onClose();
-                          resetCheckoutState();
-                        }}
-                        className="w-full text-[10px] font-black uppercase tracking-widest text-brand-dark/40 hover:text-brand transition-colors"
-                      >
-                        Keep Shopping
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
               </AnimatePresence>
             </div>
 
             {/* Bottom Actions section */}
-            {items.length > 0 && step !== 'success' && (
+            {items.length > 0 && (
               <div className="border-t border-brand/10 pt-4 mt-auto space-y-4 relative z-20 bg-white/90 backdrop-blur-md p-4 sm:p-6 -mx-6 sm:-mx-8 shrink-0 shadow-[0_-8px_30px_rgb(0,0,0,0.03)]">
                 
                 {/* Professional Receipt/Pricing Summary Box - Only in Cart */}

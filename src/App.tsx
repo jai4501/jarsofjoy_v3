@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { ToastContainer } from './components/ToastContainer';
 import { ScrollToTop } from './components/ScrollToTop';
@@ -11,6 +11,7 @@ import { useSettingsStore } from './store/useSettingsStore';
 import { useCartStore } from './store/useCartStore';
 import { useProductStore } from './store/useProductStore';
 import { CartDrawer } from './components/CartDrawer';
+import { CongratsModal } from './components/CongratsModal';
 import { supabase } from './lib/supabase';
 
 // Static page imports for instantaneous navigation
@@ -29,6 +30,54 @@ function App() {
   const { fetchSettings, isInitialized: settingsInitialized } = useSettingsStore();
   const { isCartOpen, setIsCartOpen } = useCartStore();
   const { fetchCatalog } = useProductStore();
+
+  const [showCongrats, setShowCongrats] = useState(false);
+  const [congratsOrderId, setCongratsOrderId] = useState('');
+  const [congratsOrderTotal, setCongratsOrderTotal] = useState(0);
+
+  const handleCloseCongrats = () => {
+    setShowCongrats(false);
+    // Clear all checkout keys from localStorage
+    localStorage.removeItem('joj_show_congrats');
+    localStorage.removeItem('joj_checkout_step');
+    localStorage.removeItem('joj_placed_order_id');
+    localStorage.removeItem('joj_placed_order_uuid');
+    localStorage.removeItem('joj_upi_txn_ref');
+    localStorage.removeItem('joj_order_grand_total');
+    localStorage.removeItem('joj_congrats_shown');
+  };
+
+  useEffect(() => {
+    const checkCongratsState = () => {
+      const showCongratsFlag = localStorage.getItem('joj_show_congrats') === 'true';
+      const orderId = localStorage.getItem('joj_placed_order_id') || '';
+      const orderTotalVal = localStorage.getItem('joj_order_grand_total');
+
+      if (showCongratsFlag) {
+        setCongratsOrderId(orderId);
+        setCongratsOrderTotal(orderTotalVal ? parseFloat(orderTotalVal) : 0);
+        setShowCongrats(true);
+      } else {
+        setShowCongrats(false);
+      }
+    };
+
+    // Check on mount
+    checkCongratsState();
+
+    // Listen for custom events or focus changes
+    window.addEventListener('joj_order_success', checkCongratsState);
+    window.addEventListener('focus', checkCongratsState);
+    
+    // Periodically sync in case backend background write resolves order details
+    const interval = setInterval(checkCongratsState, 1000);
+
+    return () => {
+      window.removeEventListener('joj_order_success', checkCongratsState);
+      window.removeEventListener('focus', checkCongratsState);
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -92,6 +141,12 @@ function App() {
       <div className="min-h-screen">
         <ToastContainer />
         <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
+        <CongratsModal
+          isOpen={showCongrats}
+          onClose={handleCloseCongrats}
+          placedOrderId={congratsOrderId}
+          orderGrandTotal={congratsOrderTotal}
+        />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/menu" element={<Menu />} />
