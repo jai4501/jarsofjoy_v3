@@ -78,16 +78,71 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const { user, profile } = useUserStore();
   const { addToast } = useToastStore();
 
-  const [step, setStep] = useState<'cart' | 'checkout' | 'upi_payment' | 'success'>('cart');
+  const [step, setStep] = useState<'cart' | 'checkout' | 'upi_payment' | 'success'>(() => {
+    return (localStorage.getItem('joj_checkout_step') as any) || 'cart';
+  });
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryType] = useState<'pickup' | 'delivery'>('delivery');
   const [deliveryAddress, setDeliveryAddress] = useState('');
 
-  const [placedOrderId, setPlacedOrderId] = useState('');
-  const [placedOrderUuid, setPlacedOrderUuid] = useState('');
-  const [upiTxnRef, setUpiTxnRef] = useState('');
-  const [orderGrandTotal, setOrderGrandTotal] = useState(0);
+  const [placedOrderId, setPlacedOrderId] = useState(() => {
+    return localStorage.getItem('joj_placed_order_id') || '';
+  });
+  const [placedOrderUuid, setPlacedOrderUuid] = useState(() => {
+    return localStorage.getItem('joj_placed_order_uuid') || '';
+  });
+  const [upiTxnRef, setUpiTxnRef] = useState(() => {
+    return localStorage.getItem('joj_upi_txn_ref') || '';
+  });
+  const [orderGrandTotal, setOrderGrandTotal] = useState(() => {
+    const val = localStorage.getItem('joj_order_grand_total');
+    return val ? parseFloat(val) : 0;
+  });
+
+  // Sync checkout states to localStorage to survive mobile OS background suspensions
+  useEffect(() => {
+    if (step === 'upi_payment' || step === 'success') {
+      localStorage.setItem('joj_checkout_step', step);
+    }
+  }, [step]);
+
+  useEffect(() => {
+    if (placedOrderId) {
+      localStorage.setItem('joj_placed_order_id', placedOrderId);
+    }
+  }, [placedOrderId]);
+
+  useEffect(() => {
+    if (placedOrderUuid) {
+      localStorage.setItem('joj_placed_order_uuid', placedOrderUuid);
+    }
+  }, [placedOrderUuid]);
+
+  useEffect(() => {
+    if (upiTxnRef) {
+      localStorage.setItem('joj_upi_txn_ref', upiTxnRef);
+    }
+  }, [upiTxnRef]);
+
+  useEffect(() => {
+    if (orderGrandTotal) {
+      localStorage.setItem('joj_order_grand_total', String(orderGrandTotal));
+    }
+  }, [orderGrandTotal]);
+
+  const resetCheckoutState = () => {
+    setStep('cart');
+    setPlacedOrderId('');
+    setPlacedOrderUuid('');
+    setUpiTxnRef('');
+    setOrderGrandTotal(0);
+    localStorage.removeItem('joj_checkout_step');
+    localStorage.removeItem('joj_placed_order_id');
+    localStorage.removeItem('joj_placed_order_uuid');
+    localStorage.removeItem('joj_upi_txn_ref');
+    localStorage.removeItem('joj_order_grand_total');
+  };
   const [userUpiId, setUserUpiId] = useState('');
   const [savingUpiId, setSavingUpiId] = useState(false);
   const [showQr, setShowQr] = useState(false);
@@ -481,7 +536,12 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   // Populate logged-in user profile details
   useEffect(() => {
     if (isOpen) {
-      setStep('cart');
+      const savedStep = localStorage.getItem('joj_checkout_step');
+      if (savedStep === 'success' || savedStep === 'upi_payment') {
+        setStep(savedStep as any);
+      } else {
+        setStep('cart');
+      }
       if (user) {
         setCustomerName(profile?.full_name || '');
         setCustomerPhone(profile?.mobile || '');
@@ -1824,7 +1884,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                       <button
                         onClick={() => {
                           onClose();
-                          setStep('cart');
+                          resetCheckoutState();
                         }}
                         className="w-full text-[10px] font-black uppercase tracking-widest text-brand-dark/40 hover:text-brand transition-colors"
                       >
