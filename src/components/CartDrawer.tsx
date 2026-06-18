@@ -79,7 +79,19 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const { addToast } = useToastStore();
 
   const [step, setStep] = useState<'cart' | 'checkout' | 'upi_payment' | 'success'>(() => {
-    return (localStorage.getItem('joj_checkout_step') as any) || 'cart';
+    const savedStep = localStorage.getItem('joj_checkout_step');
+    const congratsShown = localStorage.getItem('joj_congrats_shown') === 'true';
+    if (savedStep === 'success' && congratsShown) {
+      // Already seen the congrats screen, clear it to prevent sticky congrats state on reloads
+      localStorage.removeItem('joj_checkout_step');
+      localStorage.removeItem('joj_placed_order_id');
+      localStorage.removeItem('joj_placed_order_uuid');
+      localStorage.removeItem('joj_upi_txn_ref');
+      localStorage.removeItem('joj_order_grand_total');
+      localStorage.removeItem('joj_congrats_shown');
+      return 'cart';
+    }
+    return (savedStep as any) || 'cart';
   });
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -104,6 +116,9 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   useEffect(() => {
     if (step === 'upi_payment' || step === 'success') {
       localStorage.setItem('joj_checkout_step', step);
+    }
+    if (step === 'success') {
+      localStorage.setItem('joj_congrats_shown', 'true');
     }
   }, [step]);
 
@@ -142,6 +157,7 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
     localStorage.removeItem('joj_placed_order_uuid');
     localStorage.removeItem('joj_upi_txn_ref');
     localStorage.removeItem('joj_order_grand_total');
+    localStorage.removeItem('joj_congrats_shown');
   };
   const [showQr, setShowQr] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi'>('upi');
@@ -535,7 +551,10 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   useEffect(() => {
     if (isOpen) {
       const savedStep = localStorage.getItem('joj_checkout_step');
-      if (savedStep === 'success' || savedStep === 'upi_payment') {
+      const congratsShown = localStorage.getItem('joj_congrats_shown') === 'true';
+      if (savedStep === 'success' && congratsShown) {
+        resetCheckoutState();
+      } else if (savedStep === 'success' || savedStep === 'upi_payment') {
         setStep(savedStep as any);
       } else {
         setStep('cart');
