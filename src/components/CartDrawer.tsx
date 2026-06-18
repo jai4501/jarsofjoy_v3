@@ -85,6 +85,11 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [placedOrderId, setPlacedOrderId] = useState('');
+  const [placedOrderUuid, setPlacedOrderUuid] = useState('');
+  const [orderGrandTotal, setOrderGrandTotal] = useState(0);
+  const [userUpiId, setUserUpiId] = useState('');
+  const [savingUpiId, setSavingUpiId] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi'>('upi');
   const [deliveryTimeRange, setDeliveryTimeRange] = useState<'standard' | 'evening' | 'weekend'>('standard');
   
@@ -898,7 +903,9 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
         }
       }
 
-      setPlacedOrderId((orderData as any).metadata?.display_id || (orderData as any).id);
+      setPlacedOrderId((orderData as any).display_id || (orderData as any).metadata?.display_id || (orderData as any).id);
+      setPlacedOrderUuid((orderData as any).id);
+      setOrderGrandTotal(finalTotal);
       if (paymentMethod === 'upi') {
         setStep('upi_payment');
       } else {
@@ -913,6 +920,25 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
       setSubmitting(false);
     }
 
+  };
+
+  const handleSaveUserUpiId = async () => {
+    if (!userUpiId || !userUpiId.includes('@')) {
+      addToast('Please enter a valid UPI ID (e.g. name@bank)', 'error');
+      return;
+    }
+    setSavingUpiId(true);
+    try {
+      const { error } = await (supabase.from('orders') as any)
+        .update({ payment_reference: `User UPI: ${userUpiId}` })
+        .eq('id', placedOrderUuid);
+      if (error) throw error;
+      addToast('UPI ID linked successfully!', 'sweet');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to link UPI ID', 'error');
+    } finally {
+      setSavingUpiId(false);
+    }
   };
 
   const handleWhatsAppRedirect = () => {
@@ -1569,41 +1595,129 @@ export const CartDrawer = ({ isOpen, onClose }: CartDrawerProps) => {
                     key="upi-step"
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="flex flex-col items-center justify-center py-6 text-center space-y-6"
+                    className="flex flex-col py-6 space-y-6 text-center"
                   >
-                    <div className="bg-white p-4 rounded-3xl shadow-soft inline-block border border-brand/10">
-                      <QRCodeCanvas
-                        value={`upi://pay?pa=${getSetting('upi_id', '')}&pn=${getSetting('business_name', 'Jars of Joy')}&am=${total}&cu=INR&tr=${placedOrderId}`}
-                        size={200}
-                        level="H"
-                        includeMargin={true}
-                      />
-                    </div>
-                    <div className="space-y-4 w-full px-6">
-                      <h3 className="font-black text-brand-dark text-lg">Pay ₹{total} via UPI</h3>
-                      <p className="text-[10px] text-brand-dark/60 leading-relaxed">
-                        Scan the QR code above or tap the button below to pay directly via GPay, PhonePe, or Paytm.
+                    <div className="space-y-2 px-6">
+                      <h3 className="font-black text-brand-dark text-xl">Pay ₹{orderGrandTotal} via UPI</h3>
+                      <p className="text-[10px] text-brand-dark/55 leading-relaxed uppercase tracking-wider">
+                        Order Reference: {placedOrderId}
                       </p>
-                      
-                      {/* Direct UPI Intent Link for Mobile */}
-                      <a 
-                        href={`upi://pay?pa=${getSetting('upi_id', '')}&pn=${getSetting('business_name', 'Jars of Joy')}&am=${total}&cu=INR&tr=${placedOrderId}`}
-                        className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all"
-                      >
-                        🚀 Open UPI App to Pay
-                      </a>
                     </div>
-                    
-                    <Button3D
-                      onClick={() => {
-                        setStep('success');
-                        clearCart();
-                        addToast('Payment marked as pending verification!', 'sweet');
-                      }}
-                      className="w-full max-w-[200px] h-12 text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle2 size={16} /> I Have Paid
-                    </Button3D>
+
+                    {/* App Selection Grid */}
+                    <div className="px-6 space-y-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-brand-dark/40 text-left">
+                        Select UPI App to Pay
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { name: 'PhonePe', color: 'bg-[#5f259f]', link: `phonepe://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${placedOrderId}` },
+                          { name: 'Paytm', color: 'bg-[#00baf2]', link: `paytmmp://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${placedOrderId}` },
+                          { name: 'GPay / Generic', color: 'bg-[#1a73e8]', link: `upi://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${placedOrderId}` },
+                          { name: 'BHIM UPI', color: 'bg-[#e56b1f]', link: `upi://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${placedOrderId}` }
+                        ].map((app) => (
+                          <a
+                            key={app.name}
+                            href={app.link}
+                            className={`flex flex-col items-center justify-center p-3 rounded-2xl border border-brand/5 shadow-soft hover:scale-[1.03] active:scale-95 transition-all text-white ${app.color}`}
+                          >
+                            <span className="text-xs font-black uppercase tracking-wider">{app.name}</span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Copy Merchant UPI ID option (Desktop Helper) */}
+                    <div className="px-6 space-y-2">
+                      <div className="bg-brand-light/5 p-4 rounded-2xl border border-brand/5 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
+                        <div className="min-w-0">
+                          <p className="text-[9px] font-black text-brand-dark/30 uppercase tracking-widest">Merchant UPI ID</p>
+                          <p className="font-bold text-xs text-brand-dark truncate font-mono">{getSetting('upi_id', '')}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(getSetting('upi_id', ''));
+                            addToast('Merchant UPI ID copied!', 'sweet');
+                          }}
+                          className="px-4 py-2 bg-white border border-brand/10 hover:bg-brand/5 rounded-xl font-black text-[9px] uppercase tracking-widest text-brand shrink-0 transition-all shadow-sm"
+                        >
+                          Copy ID
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Provide User's UPI ID Option */}
+                    <div className="px-6 space-y-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-brand-dark/40 text-left">
+                        Or Link Your UPI ID for Verification
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="yourname@bank"
+                          value={userUpiId}
+                          onChange={(e) => setUserUpiId(e.target.value)}
+                          className="flex-1 h-11 px-3 bg-white border border-brand/10 rounded-xl text-xs font-semibold text-brand-dark focus:outline-none focus:border-brand/40 shadow-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSaveUserUpiId}
+                          disabled={savingUpiId}
+                          className="px-4 bg-brand text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-brand-dark transition-all disabled:opacity-50"
+                        >
+                          {savingUpiId ? 'Linking...' : 'Link ID'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Show QR Code Toggle */}
+                    <div className="px-6">
+                      {!showQr ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowQr(true)}
+                          className="w-full py-3 bg-white border border-brand/10 hover:bg-brand/5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-brand-dark flex items-center justify-center gap-2 transition-all shadow-sm"
+                        >
+                          📷 Show Payment QR Code
+                        </button>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center space-y-3 bg-brand-light/5 p-4 rounded-3xl border border-brand/5">
+                          <div className="bg-white p-3 rounded-2xl shadow-soft inline-block border border-brand/10">
+                            <QRCodeCanvas
+                              value={`upi://pay?pa=${getSetting('upi_id', '')}&pn=${encodeURIComponent(getSetting('business_name', 'Jars of Joy'))}&am=${orderGrandTotal}&cu=INR&tr=${placedOrderId}`}
+                              size={160}
+                              level="H"
+                              includeMargin={true}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowQr(false)}
+                            className="text-[9px] font-black text-brand uppercase tracking-widest hover:underline"
+                          >
+                            Hide QR Code
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Confirmation Button */}
+                    <div className="px-6 pt-4">
+                      <Button3D
+                        onClick={() => {
+                          setStep('success');
+                          clearCart();
+                          // Reset payment states
+                          setShowQr(false);
+                          setUserUpiId('');
+                          addToast('Payment marked as pending verification!', 'sweet');
+                        }}
+                        className="w-full h-12 text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+                      >
+                        <CheckCircle2 size={16} /> I Have Paid
+                      </Button3D>
+                    </div>
                   </motion.div>
                 )}
 
